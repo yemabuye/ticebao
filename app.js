@@ -393,8 +393,7 @@ function timerStart() {
     state.timerRunning = true;
     // 开始新一轮计时时，清空旧队列
     timerQueue = [];
-    const displayEl = document.getElementById('timer-display');
-    if (displayEl) displayEl.classList.add('running');
+    renderTimer();  // ⚠️ 关键：刷新按钮disabled状态（参照 enduranceStart 的写法）
     timerTick();
     beep(880, 250);
 }
