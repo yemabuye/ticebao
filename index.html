@@ -131,6 +131,25 @@ input, select { font-family: inherit; outline: none; }
 /* ====== 分组 ====== */
 .group-header { background: #f1f5f9; padding: 10px 16px; font-weight: 600; font-size: 14px; color: var(--text-muted); border-radius: 8px; margin: 16px 0 8px; }
 
+/* ====== 耐力跑大按钮 ====== */
+.end-capture-btn {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white; font-size: 36px; font-weight: 800;
+    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4);
+    border: 6px solid #fca5a5;
+    transition: all 0.15s;
+}
+.end-capture-btn:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4); }
+.end-capture-btn:disabled { background: #9ca3af; border-color: #d1d5db; box-shadow: none; }
+
+/* ====== 耐力跑名单 ====== */
+.end-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.end-row:active { background: #e0f2fe; }
+.end-name { flex: 1; }
+.end-result { transition: all 0.2s; }
+
 /* ====== 空状态 ====== */
 .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
