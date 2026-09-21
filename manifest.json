@@ -1,0 +1,22 @@
+{
+  "name": "体测宝 - 现场计时 & 自动评分",
+  "short_name": "体测宝",
+  "description": "老师手机上开秒表计时+录入成绩，自动匹配学生+计算评分，一键导出国网体测网标准格式",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=%E4%BD%93%E8%82%B2%E5%AE%9D%20logo%20%E8%93%9D%E7%8E%8B%E8%B7%91%E6%AD%A5%20%E8%93%9D%E8%89%B2%E8%83%8C%E6%99%AF&image_size=square_hd",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=%E4%BD%93%E8%82%B2%E5%AE%9D%20logo%20%E8%93%9D%E7%8E%8B%E8%B7%91%E6%AD%A5%20%E8%93%9D%E8%89%B2%E8%83%8C%E6%99%AF&image_size=square_hd",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
