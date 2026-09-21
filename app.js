@@ -5,8 +5,7 @@
 // ====== Supabase 配置 ======
 const SUPABASE_URL = 'https://wtjsnuucgpvaowhvwask.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_p0T7Z6Ci3_KEGGTTpjf_Lg_xIyvOZLC';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const supabase = sb; // 别名兼容
+const client = (window.supabase || window.Supabase).createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== 全局状态 ======
 let state = {
@@ -254,7 +253,7 @@ async function doLogin() {
     const password = document.getElementById('auth-password').value;
     if (!email || !password) return toast('请输入邮箱和密码', 'error');
     
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) return toast(error.message, 'error');
     
     state.user = data.user;
@@ -267,7 +266,7 @@ async function doRegister() {
     const password = document.getElementById('auth-password').value;
     if (!email || password.length < 6) return toast('请输入有效邮箱和至少6位密码', 'error');
     
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await client.auth.signUp({ email, password });
     if (error) return toast(error.message, 'error');
     
     toast('注册成功！请查收验证邮件，验证后再登录', 'success');
@@ -275,7 +274,7 @@ async function doRegister() {
 }
 
 async function checkActivationAndNavigate() {
-    const { data, error } = await supabase.rpc('check_my_activation');
+    const { data, error } = await client.rpc('check_my_activation');
     if (error || !data) {
         navigate('activation');
         return;
@@ -326,7 +325,7 @@ async function doActivate() {
     const code = document.getElementById('activation-code').value.trim().toUpperCase();
     if (!code) return toast('请输入激活码', 'error');
     
-    const { data, error } = await supabase.rpc('validate_activation_code', { input_code: code });
+    const { data, error } = await client.rpc('validate_activation_code', { input_code: code });
     if (error) return toast(error.message, 'error');
     
     if (!data.success) return toast(data.message, 'error');
@@ -337,7 +336,7 @@ async function doActivate() {
 }
 
 async function doLogout() {
-    await supabase.auth.signOut();
+    await client.auth.signOut();
     state.user = null;
     state.activation = null;
     navigate('login');
@@ -441,14 +440,14 @@ function renderNav(active) {
 // 数据加载
 // ============================================
 async function loadAllData() {
-    const { data: students, error: e1 } = await supabase.from('students').select('*');
-    const { data: scores, error: e2 } = await supabase.from('scores').select('*');
+    const { data: students, error: e1 } = await client.from('students').select('*');
+    const { data: scores, error: e2 } = await client.from('scores').select('*');
     if (!e1) state.students = students;
     if (!e2) state.scores = scores;
 }
 
 async function saveScore(studentId, project, value, unit = '') {
-    const { data, error } = await supabase.from('scores').insert({
+    const { data, error } = await client.from('scores').insert({
         student_id: studentId,
         project, value: parseFloat(value), unit
     }).select();
@@ -1094,7 +1093,7 @@ async function importExcel(file) {
                 };
                 if (!student.name) continue;
                 
-                const { data, error } = await supabase.from('students').insert(student).select();
+                const { data, error } = await client.from('students').insert(student).select();
                 if (!error && data) { state.students.push(data[0]); count++; }
             }
             toast(`成功导入 ${count} 名学生！`, 'success');
@@ -1108,7 +1107,7 @@ async function importExcel(file) {
 
 async function deleteStudent(id) {
     if (!confirm('确认删除该学生？')) return;
-    await supabase.from('students').delete().eq('id', id);
+    await client.from('students').delete().eq('id', id);
     state.students = state.students.filter(s => s.id !== id);
     state.scores = state.scores.filter(sc => sc.student_id !== id);
     renderStudentsList();
@@ -1118,7 +1117,7 @@ async function deleteClass(clsKey) {
     if (!confirm(`确认删除整个班级 ${clsKey} ？该班所有学生和成绩都会被删除！`)) return;
     const toDelete = state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === clsKey);
     for (let s of toDelete) {
-        await supabase.from('students').delete().eq('id', s.id);
+        await client.from('students').delete().eq('id', s.id);
     }
     state.students = state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` !== clsKey);
     renderStudentsList();
@@ -1371,7 +1370,7 @@ if ('serviceWorker' in navigator) {
 // 启动
 // ============================================
 (async function init() {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await client.auth.getSession();
     if (session?.user) {
         state.user = session.user;
         await checkActivationAndNavigate();
@@ -1379,7 +1378,7 @@ if ('serviceWorker' in navigator) {
         navigate('login');
     }
     
-    supabase.auth.onAuthStateChange((_event, session) => {
+    client.auth.onAuthStateChange((_event, session) => {
         if (session?.user && !state.user) {
             state.user = session.user;
             checkActivationAndNavigate();
