@@ -55,8 +55,15 @@ function loadFromStorage() {
     }
 }
 
-function saveStudents() { LS.set('tb_students', state.students); }
-function saveScores() { LS.set('tb_scores', state.scores); }
+function saveStudents() { 
+    LS.set('tb_students', state.students); 
+    // 异步推送到云端（连不上就跳过，不阻塞主流程）
+    if (window.SB && SB.ready()) SB.syncStudents(state.students).catch(() => {});
+}
+function saveScores() { 
+    LS.set('tb_scores', state.scores); 
+    if (window.SB && SB.ready()) SB.syncScores(state.scores).catch(() => {});
+}
 
 // ====== 年级编号映射 ======
 const GRADE_MAP = {
@@ -194,16 +201,36 @@ function renderActivation() {
     </div>`;
 }
 
-function doActivate() {
+async function doActivate() {
     const code = document.getElementById('activation-code').value.trim().toUpperCase();
     if (!code) return toast('请输入激活码', 'error');
-    const match = VALID_CODES.find(c => c.code === code);
-    if (!match) return toast('激活码无效，请检查拼写', 'error');
-    const expires = match.days === 0 ? null : new Date(Date.now() + match.days * 86400000).toISOString();
-    state.activationCode = { code, plan: match.plan, expires };
+    
+    // 优先走云端 RPC 校验
+    let result = null;
+    if (window.SB && SB.ready()) {
+        result = await SB.verifyCode(code);
+    }
+    
+    let match;
+    if (result && result.ok) {
+        match = result;  // 云端返回的
+    } else {
+        // 本地硬编码回退
+        match = VALID_CODES.find(c => c.code === code);
+    }
+    
+    if (!match || !match.ok && !VALID_CODES.find(c => c.code === code)) {
+        return toast('激活码无效，请检查拼写', 'error');
+    }
+    
+    const plan = match.plan || VALID_CODES.find(c => c.code === code)?.plan || 'TRIAL';
+    const days = match.days ?? VALID_CODES.find(c => c.code === code)?.days ?? 7;
+    const expires = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
+    
+    state.activationCode = { code, plan, expires };
     state.activated = true;
     LS.set('tb_activation', state.activationCode);
-    const expText = match.days === 0 ? '永久' : `${match.days}天后过期`;
+    const expText = days === 0 ? '永久' : `${days}天后过期`;
     toast(`激活成功！${expText}`, 'success');
     navigate('home');
 }
@@ -212,6 +239,10 @@ function doActivate() {
 // 首页 + 导航
 // ============================================
 function renderNav(active) {
+    const cloudOnline = window.SB && SB.ready();
+    const cloudStatus = cloudOnline 
+        ? '<span class="badge badge-excellent" style="font-size:10px;">☁️ 云端</span>' 
+        : '<span class="badge badge-pass" style="font-size:10px;">💻 本机</span>';
     const tabs = [
         { id: 'home', label: '🏠 首页' },
         { id: 'timer', label: '⏱️ 计时' },
@@ -226,9 +257,10 @@ function renderNav(active) {
     return `
     <div class="app-header">
         <div class="flex-between" style="margin-bottom:8px;">
-            <div class="nav-title">🏃 体测宝</div>
+            <div class="nav-title">🏃 体测宝 ${cloudStatus}</div>
             <div class="flex" style="gap:8px;">
                 ${state.activated ? '<span class="badge badge-excellent">✓ 已激活</span>' : '<span class="badge badge-fail">未激活</span>'}
+                ${cloudOnline ? `<button class="btn btn-sm btn-ghost" onclick="manualSync()">☁️ 同步</button>` : ''}
                 <button class="btn btn-sm btn-ghost" onclick="clearAll()">🗑️ 清空</button>
             </div>
         </div>
@@ -236,6 +268,17 @@ function renderNav(active) {
             ${tabs.map(t => `<div class="nav-item ${active===t.id?'active':''}" onclick="navigate('${t.id}')">${t.label}</div>`).join('')}
         </div>
     </div>`;
+}
+
+// 手动触发云端同步
+async function manualSync() {
+    if (!window.SB || !SB.ready()) return toast('当前离线，无法同步', 'error');
+    toast('⏳ 正在同步到云端...', 'info');
+    const studentResult = await SB.syncStudents(state.students);
+    const scoreResult = await SB.syncScores(state.scores);
+    const total = (studentResult.count || 0) + (scoreResult.count || 0);
+    toast(`☁️ 同步完成！共 ${total} 条数据`, 'success');
+    renderNav(document.querySelector('.nav-item.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1] || 'home');
 }
 
 function renderHome() {
@@ -262,11 +305,21 @@ function renderHome() {
 }
 
 function saveLS(collection, data) { LS.set('tb_' + collection, data); }
-function addStudent(s) { s.id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6); state.students.push(s); saveStudents(); }
+// 生成标准 UUID（匹配 Supabase 数据库的 uuid 类型）
+function genUUID() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    // 回退方案
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+function addStudent(s) { s.id = genUUID(); state.students.push(s); saveStudents(); }
 function deleteStudent(id) { state.students = state.students.filter(s => s.id !== id); state.scores = state.scores.filter(sc => sc.student_id !== id); saveStudents(); saveScores(); }
 function saveScore(studentId, project, value, unit = '') {
     state.scores = state.scores.filter(sc => !(sc.student_id === studentId && sc.project === project));
-    state.scores.push({ id: 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), student_id: studentId, project, value: parseFloat(value), unit, recorded_at: new Date().toISOString() });
+    state.scores.push({ id: genUUID(), student_id: studentId, project, value: parseFloat(value), unit, recorded_at: new Date().toISOString() });
     saveScores();
 }
 function clearAll() { if (!confirm('确定要清空所有学生和成绩数据吗？此操作不可恢复！')) return; state.students = []; state.scores = []; saveStudents(); saveScores(); toast('已清空', 'success'); renderHome(); }
@@ -908,4 +961,29 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
 // ============================================
 // 启动
 // ============================================
-(function init() { loadFromStorage(); if (!state.activated) renderActivation(); else renderHome(); })();
+(async function init() {
+    loadFromStorage();
+    // 初始化 Supabase（连不上就自动跳过，不阻塞主流程）
+    if (window.SB) {
+        await SB.init();
+        if (SB.ready()) {
+            console.log('[体测宝] 云端已连接，支持跨设备同步');
+        } else {
+            console.log('[体测宝] 离线模式，数据存在本机浏览器');
+        }
+    }
+    
+    // 自动拉一次云端数据（合并到本地）
+    if (window.SB && SB.ready()) {
+        try {
+            await SB.syncStudents(state.students);
+            const syncResult = await SB.syncScores(state.scores);
+            if (syncResult.status === 'synced') {
+                toast(`☁️ 已从云端拉取 ${syncResult.count} 条数据`, 'success');
+            }
+        } catch(e) { console.warn('自动同步跳过:', e.message); }
+    }
+    
+    if (!state.activated) renderActivation();
+    else renderHome();
+})();
