@@ -1171,9 +1171,16 @@ function renderStudents() {
     el.innerHTML = Object.entries(byClass).map(([cls, list]) => `<div class="card"><div class="flex-between" style="margin-bottom:8px;"><div class="h2" style="margin:0;">${cls} <span style="font-size:14px;color:var(--text-muted);">(${list.length}人)</span></div><button class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){state.students=state.students.filter(s=>'${cls}'.indexOf((s.grade||'')+(s.class_name||'未分班'))<0);saveStudents();renderStudents();}">删除班级</button></div>${list.map(s => `<div class="student-row"><div class="student-info"><div class="name">${s.name}</div><div class="meta">${s.gender||''} ${s.student_id||''}</div></div><button class="btn btn-sm btn-ghost" onclick="deleteStudent('${s.id}');renderStudents();">删除</button></div>`).join('')}</div>`).join('');
 }
 function downloadTemplate() {
-    const ws = XLSX.utils.aoa_to_sheet([['姓名','性别','年级','班级','学籍号','民族'],['张三','男','四年级','1','','汉族']]);
+    const ws = XLSX.utils.aoa_to_sheet([
+        ['姓名','性别','年级','班级','学籍号','民族'],
+        ['张三','男','四年级','1','2024010001','汉族'],
+        ['李四','女','四年级','1','2024010002','汉族']
+    ]);
     ws['!cols'] = [{wch:10},{wch:6},{wch:10},{wch:6},{wch:15},{wch:6}];
-    XLSX.writeFile(XLSX.utils.book_new(), '体测宝_导入模板.xlsx'); toast('模板已下载', 'success');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '学生名单');
+    XLSX.writeFile(wb, '体测宝_导入模板.xlsx');
+    toast('模板已下载', 'success');
 }
 function importExcel(file) {
     const reader = new FileReader();
