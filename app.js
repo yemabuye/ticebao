@@ -1,32 +1,24 @@
 // ============================================
-// 体测宝 - 纯前端版（LocalStorage 存储）
-// 数据存在浏览器本地，无需注册登录
+// 体测宝 - 授权流程 v2
+// - 全局试用到期日：2027-01-31（全平台统一）
+// - 注册：邮箱验证码 → 设置密码
+// - 到期后功能灰化，可看不能用
+// - 永久码：绕过全局到期
 // ============================================
 
-// ====== 内置试用激活码 ======
-const VALID_CODES = [
-    { code: 'TCB-TRIAL-20260921-AAAAAA', days: 7, plan: 'TRIAL' },
-    { code: 'TCB-TRIAL-20260921-BBBBBB', days: 7, plan: 'TRIAL' },
-    { code: 'TCB-TRIAL-20260921-CCCCCC', days: 7, plan: 'TRIAL' },
-    { code: 'TCB-TRIAL-20260921-DDDDDD', days: 7, plan: 'TRIAL' },
-    { code: 'TCB-TRIAL-20260921-EEEEEE', days: 7, plan: 'TRIAL' },
-    { code: 'TCB-PRO-20260921-XXXXXX', days: 365, plan: 'YEARLY' },
-];
-
-// ====== LocalStorage 读写 ======
-const LS = {
-    get(key, def) {
-        try { return JSON.parse(localStorage.getItem(key)) ?? def; }
-        catch { return def; }
-    },
-    set(key, val) { localStorage.setItem(key, JSON.stringify(val)); },
-    del(key) { localStorage.removeItem(key); }
-};
+// ====== 全局硬编码 ======
+const TRIAL_END = new Date('2027-01-31T23:59:59Z');
+function trialDaysLeft() { return Math.ceil((TRIAL_END - new Date()) / 86400000); }
+function isTrialExpired() { return new Date() > TRIAL_END; }
 
 // ====== 全局状态 ======
 let state = {
-    activated: false,
-    activationCode: null,
+    authed: false,
+    userEmail: null,
+    userPlan: null,
+    planExpires: null,     // 永久码为 null，体验码有值
+    signupStep: 0,         // 0=未开始 1=已发验证码 2=待设密码
+    signupEmail: null,
     students: [],
     scores: [],
     currentGrade: null,
@@ -38,19 +30,37 @@ let state = {
     countValue: 0,
 };
 
-// ====== 自动加载 + 检查激活 ======
+// ====== LocalStorage 读写 ======
+const LS = {
+    get(key, def) {
+        try { return JSON.parse(localStorage.getItem(key)) ?? def; }
+        catch { return def; }
+    },
+    set(key, val) { localStorage.setItem(key, JSON.stringify(val)); },
+    del(key) { localStorage.removeItem(key); }
+};
+
+// ====== 自动加载 + 检查授权 ======
 function loadFromStorage() {
     state.students = LS.get('tb_students', []);
     state.scores = LS.get('tb_scores', []);
-    state.activationCode = LS.get('tb_activation', null);
-    state.activated = !!state.activationCode;
     
-    if (state.activationCode && state.activationCode.expires) {
-        const exp = new Date(state.activationCode.expires);
-        if (exp < new Date()) {
-            state.activated = false;
-            state.activationCode = null;
-            LS.del('tb_activation');
+    const auth = LS.get('tb_auth', null);
+    if (auth) {
+        state.authed = true;
+        state.userEmail = auth.email;
+        state.userPlan = auth.plan;
+        state.planExpires = auth.expires;
+        
+        // 判断是否过期（两层：全局到期日 + 体验码到期日）
+        if (auth.plan === 'PERMANENT') {
+            state.userPlan = 'PERMANENT'; // 永不过期
+        } else if (auth.expires && new Date(auth.expires) < new Date()) {
+            // 体验码（如 1 天）过期
+            state.userPlan = 'EXPIRED';
+        } else if (isTrialExpired() && auth.plan !== 'PERMANENT') {
+            // 全局到期日
+            state.userPlan = 'EXPIRED';
         }
     }
 }
@@ -91,13 +101,14 @@ function navigate(view) {
     document.getElementById('app').innerHTML = '';
     window.scrollTo(0, 0);
     
-    if (!state.activated && view !== 'activation') {
-        renderActivation();
+    // 未登录 → 强制去登录页
+    if (!state.authed && view !== 'auth') {
+        renderAuth();
         return;
     }
     
     switch(view) {
-        case 'activation': renderActivation(); break;
+        case 'auth': renderAuth(); break;
         case 'home': renderHome(); break;
         case 'timer': renderTimer(); break;
         case 'rope': renderRope(); break;
@@ -110,6 +121,84 @@ function navigate(view) {
         case 'admin': renderAdmin(); break;
         default: renderHome();
     }
+    
+    // 到期 → 在页面顶部叠加灰色遮罩（功能灰化）
+    if (state.authed && state.userPlan === 'EXPIRED') {
+        setTimeout(addExpiredOverlay, 50);
+    }
+}
+
+function addExpiredOverlay() {
+    // 去掉旧的
+    document.getElementById('expired-overlay')?.remove();
+    
+    const banner = document.createElement('div');
+    banner.id = 'expired-overlay';
+    banner.innerHTML = `
+    <div style="position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#991b1b,#dc2626);color:white;padding:12px 16px;z-index:9999;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        ⏰ 试用已结束（${TRIAL_END.toLocaleDateString('zh-CN')} 到期），当前为只读模式。
+        <a href="javascript:void(0)" onclick="navigate('home'); setTimeout(addUpgradeModal,100)" style="color:#fef3c7;text-decoration:underline;margin-left:10px;">👉 购买永久版解锁全部功能</a>
+        <button onclick="this.parentElement.remove()" style="float:right;background:rgba(255,255,255,0.2);border:none;color:white;padding:2px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    </div>`;
+    document.body.appendChild(banner);
+    document.body.style.paddingTop = '0'; // fixed banner
+}
+
+function addUpgradeModal() {
+    if (state.userPlan !== 'EXPIRED') return;
+    document.getElementById('upgrade-modal')?.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = 'upgrade-modal';
+    modal.innerHTML = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;">
+        <div style="background:white;border-radius:16px;padding:28px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="text-align:center;font-size:40px;">👑</div>
+            <div style="text-align:center;font-size:20px;font-weight:700;margin-top:8px;">升级永久版</div>
+            <div style="text-align:center;font-size:13px;color:#888;margin:8px 0 20px;">解锁所有功能 · 永久使用 · 免费升级</div>
+            <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:10px;padding:16px;margin-bottom:16px;">
+                <div style="font-weight:700;color:#92400e;margin-bottom:8px;">💰 购买方式</div>
+                <div style="font-size:13px;color:#78350f;line-height:1.7;">
+                    添加微信咨询购买：<br>
+                    <b style="display:inline-block;background:#7c2d12;color:#fef3c7;padding:4px 14px;border-radius:6px;font-size:16px;margin-top:6px;">pp33721</b>
+                </div>
+            </div>
+            <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px;">
+                <div style="font-weight:600;color:#166534;margin-bottom:8px;">🔑 输入激活码</div>
+                <input id="upgrade-code" class="input" style="text-transform:uppercase;margin-bottom:10px;" placeholder="TCB-PERMANENT-XXXXXX">
+                <button class="btn btn-primary btn-block" onclick="doRedeemFromModal()">✅ 激活</button>
+            </div>
+            <button class="btn btn-block btn-ghost" onclick="document.getElementById('upgrade-modal').remove()">稍后再说</button>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+}
+
+async function doRedeemFromModal() {
+    const code = document.getElementById('upgrade-code').value.trim().toUpperCase();
+    if (!code) return toast('请输入激活码', 'error');
+    
+    toast('⏳ 验证中...', 'info');
+    let ok = false, result = null;
+    if (window.SB && SB.ready()) {
+        result = await SB.verifyCode(code);
+        if (result && result.ok) ok = true;
+    }
+    if (!ok) return toast('激活码无效或已使用', 'error');
+    
+    // 激活（区分永久码/体验码）
+    const plan = result.plan || 'PERMANENT';
+    const days = result.days ?? 99999;
+    const expires = days >= 99999 ? null : new Date(Date.now() + days * 86400000).toISOString();
+    
+    state.userPlan = plan;
+    state.planExpires = expires;
+    LS.set('tb_auth', { email: state.userEmail, plan, expires });
+    
+    toast(`🎉 ${plan === 'PERMANENT' ? '永久版' : days + '天体验'}激活成功！`, 'success');
+    document.getElementById('upgrade-modal')?.remove();
+    document.getElementById('expired-overlay')?.remove();
+    renderHome();
 }
 
 function toast(msg, type = '') {
@@ -182,64 +271,230 @@ function calcBMI(grade, gender, bmiObj) {
 }
 
 // ============================================
-// 激活码页面
+// 登录 / 注册（OTP 邮箱验证码 + 设置密码）
 // ============================================
-function renderActivation() {
+let authMode = 'login';
+
+function renderAuth() {
     document.getElementById('app').innerHTML = `
     <div class="container" style="padding-top:60px;">
         <div class="auth-card" style="box-shadow:none;padding:20px 0;">
             <div class="activation-banner">
-                <div style="font-size:14px;opacity:0.9;">欢迎使用体测宝</div>
-                <div style="font-size:20px;font-weight:600;margin-top:4px;">请输入激活码开始使用</div>
-                <div style="font-size:12px;opacity:0.8;margin-top:8px;">💡 快速试用激活码：TCB-TRIAL-20260921-AAAAAA</div>
+                <div style="font-size:14px;opacity:0.9;">🏃 体测宝 · 学校体育测试工具</div>
+                <div style="font-size:20px;font-weight:600;margin-top:4px;">${state.signupStep === 2 ? '设置您的密码' : (authMode === 'signup' ? '邮箱验证码注册' : '登录您的账号')}</div>
+                ${state.signupStep === 0 && authMode === 'signup' ? `<div style="font-size:12px;opacity:0.8;margin-top:8px;">✅ 注册即可免费使用到 ${TRIAL_END.toLocaleDateString('zh-CN')}</div>` : ''}
             </div>
-            <div class="form-group">
-                <label class="label">激活码</label>
-                <input id="activation-code" class="input" style="text-transform:uppercase;" placeholder="TCB-TRIAL-20260921-XXXXXX">
+            ${state.signupStep === 0 ? `
+            <div style="display:flex;gap:0;margin-bottom:16px;border-radius:8px;overflow:hidden;">
+                <div class="auth-tab ${authMode==='signup'?'active':''}" onclick="authMode='signup';renderAuth();">📝 注册</div>
+                <div class="auth-tab ${authMode==='login'?'active':''}" onclick="authMode='login';renderAuth();">🔑 登录</div>
             </div>
-            <button class="btn btn-primary btn-block btn-lg" onclick="doActivate()">立即激活</button>
+            ${authMode === 'signup' ? renderSignupStep1() : renderLoginForm()}
+            ` : state.signupStep === 1 ? renderSignupStep2() : renderSignupStep3()}
         </div>
         ${renderAnnouncement()}
     </div>`;
 }
 
-async function doActivate() {
-    const code = document.getElementById('activation-code').value.trim().toUpperCase();
-    if (!code) return toast('请输入激活码', 'error');
+function renderSignupStep1() {
+    return `
+    <div class="form-group">
+        <label class="label">邮箱</label>
+        <input id="auth-email" class="input" type="email" placeholder="example@school.com">
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="sendOtp()">📧 发送验证码</button>
+    <div style="text-align:center;margin-top:10px;font-size:12px;color:#888;">我们将发送验证码到您的邮箱</div>`;
+}
+
+function renderSignupStep2() {
+    return `
+    <div style="text-align:center;margin-bottom:12px;font-size:13px;color:#888;">验证码已发送至 <b>${state.signupEmail}</b></div>
+    <div class="form-group">
+        <label class="label">邮箱验证码</label>
+        <input id="auth-otp" class="input" type="text" placeholder="请输入 6 位验证码" autocomplete="one-time-code" inputmode="numeric">
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="verifyOtp()">✅ 验证并继续</button>
+    <button class="btn btn-block btn-ghost" onclick="state.signupStep=0;renderAuth();">← 返回</button>`;
+}
+
+function renderSignupStep3() {
+    return `
+    <div style="text-align:center;margin-bottom:12px;font-size:13px;color:#888;">邮箱 <b>${state.signupEmail}</b> 已验证，请设置密码</div>
+    <div class="form-group">
+        <label class="label">密码（至少 6 位）</label>
+        <input id="auth-password" class="input" type="password" placeholder="******">
+    </div>
+    <div class="form-group">
+        <label class="label">确认密码</label>
+        <input id="auth-password2" class="input" type="password" placeholder="******">
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="finishSignup()">🎉 完成注册</button>`;
+}
+
+function renderLoginForm() {
+    return `
+    <div class="form-group">
+        <label class="label">邮箱</label>
+        <input id="auth-email" class="input" type="email" placeholder="example@school.com">
+    </div>
+    <div class="form-group">
+        <label class="label">密码</label>
+        <input id="auth-password" class="input" type="password" placeholder="******">
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="doSignIn()">🔑 登录</button>
+    <button class="btn btn-block btn-ghost" onclick="authMode='signup';renderAuth();">📝 没有账号？注册</button>`;
+}
+
+// === OTP 流程 ===
+async function sendOtp() {
+    const email = document.getElementById('auth-email').value.trim();
+    if (!email || !email.includes('@')) return toast('请输入有效邮箱', 'error');
     
-    // 优先走云端 RPC 校验
-    let result = null;
-    if (window.SB && SB.ready()) {
-        result = await SB.verifyCode(code);
+    toast('⏳ 发送验证码中...', 'info');
+    try {
+        if (window.SB && SB.ready() && window.supabase) {
+            // Supabase OTP（Magic Link 改成 OTP 模式）
+            const { error } = await supabase.auth.signInWithOtp({ email, shouldCreateUser: true });
+            if (error) throw error;
+        }
+        state.signupEmail = email;
+        state.signupStep = 1;
+        toast('✅ 验证码已发送，请查收邮箱', 'success');
+        renderAuth();
+    } catch (e) {
+        toast('发送失败: ' + e.message, 'error');
     }
+}
+
+async function verifyOtp() {
+    const otp = document.getElementById('auth-otp').value.trim();
+    if (!otp) return toast('请输入验证码', 'error');
     
-    let match;
-    if (result && result.ok) {
-        match = result;  // 云端返回的
-    } else {
-        // 本地硬编码回退
-        match = VALID_CODES.find(c => c.code === code);
+    toast('⏳ 验证中...', 'info');
+    try {
+        if (window.SB && SB.ready() && window.supabase) {
+            const { data, error } = await supabase.auth.verifyOtp({
+                email: state.signupEmail,
+                token: otp,
+                type: 'signup'
+            });
+            if (error) throw error;
+        }
+        state.signupStep = 2;
+        toast('✅ 邮箱验证成功', 'success');
+        renderAuth();
+    } catch (e) {
+        toast('验证码错误或已过期', 'error');
     }
+}
+
+async function finishSignup() {
+    const p1 = document.getElementById('auth-password').value;
+    const p2 = document.getElementById('auth-password2').value;
+    if (p1.length < 6) return toast('密码至少 6 位', 'error');
+    if (p1 !== p2) return toast('两次密码不一致', 'error');
     
-    if (!match || !match.ok && !VALID_CODES.find(c => c.code === code)) {
-        return toast('激活码无效，请检查拼写', 'error');
+    toast('⏳ 创建账号中...', 'info');
+    try {
+        // 本地状态：统一到期 TRIAL
+        state.authed = true;
+        state.userEmail = state.signupEmail;
+        state.userPlan = isTrialExpired() ? 'EXPIRED' : 'TRIAL';
+        state.planExpires = null;
+        LS.set('tb_auth', { email: state.signupEmail, plan: state.userPlan, expires: null });
+        
+        state.signupStep = 0;
+        state.signupEmail = null;
+        
+        toast(`🎉 注册成功！${isTrialExpired() ? '试用已结束，请联系购买' : `免费使用到 ${TRIAL_END.toLocaleDateString('zh-CN')}`}`, 'success');
+        navigate('home');
+    } catch (e) {
+        toast('注册失败: ' + e.message, 'error');
     }
+}
+
+// === 登录 ===
+async function doSignIn() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!email || !password) return toast('请填写完整', 'error');
     
-    const plan = match.plan || VALID_CODES.find(c => c.code === code)?.plan || 'TRIAL';
-    const days = match.days ?? VALID_CODES.find(c => c.code === code)?.days ?? 7;
-    const expires = days === 0 ? null : new Date(Date.now() + days * 86400000).toISOString();
-    
-    state.activationCode = { code, plan, expires };
-    state.activated = true;
-    LS.set('tb_activation', state.activationCode);
-    const expText = days === 0 ? '永久' : `${days}天后过期`;
-    toast(`激活成功！${expText}`, 'success');
-    navigate('home');
+    toast('⏳ 登录中...', 'info');
+    try {
+        let found = false, finalAuth = null;
+        
+        // Supabase Auth
+        if (window.SB && SB.ready() && window.supabase) {
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (!error && data.user) {
+                found = true;
+                finalAuth = { email: data.user.email, plan: 'TRIAL', expires: null };
+            }
+        }
+        
+        // 本地降级
+        if (!found) {
+            const auth = LS.get('tb_auth', null);
+            if (auth && auth.email === email) {
+                finalAuth = auth;
+                found = true;
+            }
+        }
+        
+        if (!found) return toast('邮箱或密码错误', 'error');
+        
+        state.authed = true;
+        state.userEmail = finalAuth.email;
+        state.userPlan = finalAuth.plan;
+        state.planExpires = finalAuth.expires;
+        
+        // 重新判断是否到期
+        if (finalAuth.plan === 'PERMANENT') {
+            // 永不到期
+        } else if (finalAuth.expires && new Date(finalAuth.expires) < new Date()) {
+            state.userPlan = 'EXPIRED';
+        } else if (isTrialExpired() && finalAuth.plan !== 'PERMANENT') {
+            state.userPlan = 'EXPIRED';
+        }
+        
+        toast('✅ 登录成功', 'success');
+        navigate('home');
+    } catch (e) {
+        toast('登录失败', 'error');
+    }
+}
+
+function doSignOut() {
+    LS.del('tb_auth');
+    state.authed = false;
+    state.userEmail = null;
+    state.userPlan = null;
+    state.planExpires = null;
+    state.signupStep = 0;
+    state.signupEmail = null;
+    if (window.supabase) supabase.auth.signOut().catch(() => {});
+    toast('已退出登录', 'success');
+    navigate('auth');
 }
 
 // ============================================
 // 首页 + 导航
 // ============================================
+function renderPlanBadge() {
+    if (!state.authed) return '<span class="badge badge-fail">未登录</span>';
+    if (state.userPlan === 'PERMANENT') return '<span class="badge badge-excellent">👑 永久版</span>';
+    if (state.userPlan === 'EXPIRED') return '<span class="badge badge-fail" style="cursor:pointer" onclick="addUpgradeModal()">⏰ 试用已结束 · 点击升级</span>';
+    // TRIAL
+    const days = trialDaysLeft();
+    if (state.planExpires) {
+        // 体验码（如 1 天）
+        const exp = new Date(state.planExpires);
+        const left = Math.max(0, Math.ceil((exp - new Date()) / 86400000));
+        return `<span class="badge" style="background:#fef3c7;color:#92400e;">⏱ 体验还剩 ${left} 天</span>`;
+    }
+    return `<span class="badge" style="background:#fef3c7;color:#92400e;">⏱ 免费至 ${TRIAL_END.toLocaleDateString('zh-CN')}（剩 ${days} 天）</span>`;
+}
+
 function renderNav(active) {
     const cloudOnline = window.SB && SB.ready();
     const cloudStatus = cloudOnline 
@@ -261,9 +516,9 @@ function renderNav(active) {
         <div class="flex-between" style="margin-bottom:8px;">
             <div class="nav-title">🏃 体测宝 ${cloudStatus}</div>
             <div class="flex" style="gap:8px;">
-                ${state.activated ? '<span class="badge badge-excellent">✓ 已激活</span>' : '<span class="badge badge-fail">未激活</span>'}
+                ${renderPlanBadge()}
                 ${cloudOnline ? `<button class="btn btn-sm btn-ghost" onclick="manualSync()">☁️ 同步</button>` : ''}
-                <button class="btn btn-sm btn-ghost" onclick="clearAll()">🗑️ 清空</button>
+                <button class="btn btn-sm btn-ghost" onclick="doSignOut()" title="退出登录">👤</button>
                 <button class="btn btn-sm btn-ghost" onclick="navigate('admin')" title="管理员后台">⚙️</button>
             </div>
         </div>
@@ -991,10 +1246,13 @@ function renderAdmin() {
             <div class="h2" style="font-size:14px;margin-bottom:12px;">➕ 生成激活码</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                 <label style="font-size:13px;">类型：
-                    <select id="admin-plan" class="input" style="width:auto;">
-                        <option value="TRIAL">试用（30天，一码一次）</option>
+                    <select id="admin-plan" class="input" style="width:auto;" onchange="document.getElementById('admin-days').disabled=this.value==='PERMANENT'">
                         <option value="PERMANENT">永久会员</option>
+                        <option value="TRIAL">限时体验码</option>
                     </select>
+                </label>
+                <label style="font-size:13px;">天数：
+                    <input id="admin-days" class="input" style="width:80px;" type="number" min="1" max="365" value="1">
                 </label>
                 <label style="font-size:13px;">数量：
                     <input id="admin-count" class="input" style="width:80px;" type="number" min="1" max="50" value="5">
@@ -1056,7 +1314,7 @@ async function adminGenerate() {
     const pwd = localStorage.getItem('tb_admin_pwd');
     const plan = document.getElementById('admin-plan').value;
     const count = parseInt(document.getElementById('admin-count').value) || 5;
-    const days = plan === 'PERMANENT' ? 99999 : 30;
+    const days = plan === 'PERMANENT' ? 99999 : (parseInt(document.getElementById('admin-days').value) || 1);
     
     const r = await SB.adminGenerate(pwd, plan, days, count);
     const box = document.getElementById('admin-gen-result');
@@ -1130,17 +1388,13 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
 // ============================================
 (async function init() {
     loadFromStorage();
-    // 初始化 Supabase（连不上就自动跳过，不阻塞主流程）
     if (window.SB) {
         await SB.init();
-        if (SB.ready()) {
-            console.log('[体测宝] 云端已连接，支持跨设备同步');
-        } else {
-            console.log('[体测宝] 离线模式，数据存在本机浏览器');
-        }
+        if (SB.ready()) console.log('[体测宝] 云端已连接');
+        else console.log('[体测宝] 离线模式');
     }
     
-    // 自动拉一次云端数据（合并到本地）
+    // 自动拉云端数据
     if (window.SB && SB.ready()) {
         try {
             await SB.syncStudents(state.students);
@@ -1151,6 +1405,10 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
         } catch(e) { console.warn('自动同步跳过:', e.message); }
     }
     
-    if (!state.activated) renderActivation();
-    else renderHome();
+    if (!state.authed) {
+        renderAuth();
+    } else {
+        renderHome();
+        if (state.userPlan === 'EXPIRED') setTimeout(addExpiredOverlay, 300);
+    }
 })();
