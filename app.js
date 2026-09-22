@@ -107,6 +107,7 @@ function navigate(view) {
         case 'students': renderStudents(); break;
         case 'export': renderExport(); break;
         case 'analysis': renderAnalysis(); break;
+        case 'admin': renderAdmin(); break;
         default: renderHome();
     }
 }
@@ -198,6 +199,7 @@ function renderActivation() {
             </div>
             <button class="btn btn-primary btn-block btn-lg" onclick="doActivate()">立即激活</button>
         </div>
+        ${renderAnnouncement()}
     </div>`;
 }
 
@@ -262,10 +264,25 @@ function renderNav(active) {
                 ${state.activated ? '<span class="badge badge-excellent">✓ 已激活</span>' : '<span class="badge badge-fail">未激活</span>'}
                 ${cloudOnline ? `<button class="btn btn-sm btn-ghost" onclick="manualSync()">☁️ 同步</button>` : ''}
                 <button class="btn btn-sm btn-ghost" onclick="clearAll()">🗑️ 清空</button>
+                <button class="btn btn-sm btn-ghost" onclick="navigate('admin')" title="管理员后台">⚙️</button>
             </div>
         </div>
         <div class="app-nav">
             ${tabs.map(t => `<div class="nav-item ${active===t.id?'active':''}" onclick="navigate('${t.id}')">${t.label}</div>`).join('')}
+        </div>
+    </div>`;
+}
+
+// ============================================
+// 公告栏
+// ============================================
+function renderAnnouncement() {
+    return `
+    <div class="announcement-bar" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#7c2d12;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;">
+        <div style="font-weight:700;margin-bottom:4px;">📢 公告</div>
+        <div style="line-height:1.6;">
+            试用激活码有效期 <b>30 天</b>，到期后如需继续使用请购买永久版。<br>
+            💰 <b>购买永久版 / 技术支持</b>，请添加微信：<b style="font-size:15px;background:#7c2d12;color:#fef3c7;padding:2px 10px;border-radius:4px;">pp33721</b>
         </div>
     </div>`;
 }
@@ -282,7 +299,7 @@ async function manualSync() {
 }
 
 function renderHome() {
-    document.getElementById('app').innerHTML = renderNav('home') + `
+    document.getElementById('app').innerHTML = renderNav('home') + renderAnnouncement() + `
     <div class="container">
         <div class="h2">📋 快速开始</div>
         <div class="card" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;">
@@ -951,6 +968,156 @@ function doExport() {
     const now = new Date();
     XLSX.writeFile(XLSX.utils.book_new(), `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`);
     toast('导出成功！', 'success');
+}
+
+// ============================================
+// 管理员后台
+// ============================================
+let adminLoggedIn = false;
+let adminCodesCache = [];
+
+function renderAdmin() {
+    if (!adminLoggedIn) return renderAdminLogin();
+    
+    document.getElementById('app').innerHTML = renderNav('admin') + `
+    <div class="container">
+        <div class="card" style="background:linear-gradient(135deg,#dc2626,#991b1b);color:white;text-align:center;">
+            <div style="font-size:20px;font-weight:700;margin-bottom:6px;">🔐 管理员后台</div>
+            <div style="font-size:12px;opacity:0.8;">激活码生成 · 查询 · 禁用</div>
+            <button class="btn" style="margin-top:10px;background:rgba(255,255,255,0.2);color:white;" onclick="adminLogout()">退出登录</button>
+        </div>
+
+        <div class="card">
+            <div class="h2" style="font-size:14px;margin-bottom:12px;">➕ 生成激活码</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <label style="font-size:13px;">类型：
+                    <select id="admin-plan" class="input" style="width:auto;">
+                        <option value="TRIAL">试用（30天，一码一次）</option>
+                        <option value="PERMANENT">永久会员</option>
+                    </select>
+                </label>
+                <label style="font-size:13px;">数量：
+                    <input id="admin-count" class="input" style="width:80px;" type="number" min="1" max="50" value="5">
+                </label>
+                <button class="btn btn-primary" onclick="adminGenerate()">🔑 批量生成</button>
+            </div>
+            <div id="admin-gen-result" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <div class="h2" style="font-size:14px;">📋 激活码列表</div>
+                <button class="btn" onclick="adminRefreshList()">🔄 刷新</button>
+            </div>
+            <div id="admin-codes-list">
+                <div style="text-align:center;color:#888;padding:20px;">加载中...</div>
+            </div>
+        </div>
+    </div>`;
+    adminRefreshList();
+}
+
+function renderAdminLogin() {
+    document.getElementById('app').innerHTML = renderNav('admin') + `
+    <div class="container">
+        <div class="card" style="max-width:400px;margin:40px auto;text-align:center;">
+            <div style="font-size:24px;margin-bottom:12px;">🔐</div>
+            <div class="h2">管理员登录</div>
+            <div style="font-size:12px;color:#888;margin-bottom:16px;">只有管理员才能进入此页面</div>
+            <input id="admin-pwd" class="input" type="password" placeholder="管理员密码" style="margin-bottom:12px;" onkeydown="if(event.key==='Enter')adminLogin()">
+            <button class="btn btn-primary btn-block" onclick="adminLogin()">登录</button>
+        </div>
+    </div>`;
+}
+
+async function adminLogin() {
+    const pwd = document.getElementById('admin-pwd').value.trim();
+    if (!pwd) return toast('请输入密码', 'error');
+    if (!SB.ready()) return toast('云端未连接', 'error');
+    
+    const r = await SB.adminList(pwd);
+    if (r.ok) {
+        adminLoggedIn = true;
+        localStorage.setItem('tb_admin_pwd', pwd); // 临时存一下
+        toast('登录成功', 'success');
+        renderAdmin();
+    } else {
+        toast(r.message || '密码错误', 'error');
+    }
+}
+
+function adminLogout() {
+    adminLoggedIn = false;
+    localStorage.removeItem('tb_admin_pwd');
+    renderAdmin();
+}
+
+async function adminGenerate() {
+    const pwd = localStorage.getItem('tb_admin_pwd');
+    const plan = document.getElementById('admin-plan').value;
+    const count = parseInt(document.getElementById('admin-count').value) || 5;
+    const days = plan === 'PERMANENT' ? 99999 : 30;
+    
+    const r = await SB.adminGenerate(pwd, plan, days, count);
+    const box = document.getElementById('admin-gen-result');
+    
+    if (r.ok) {
+        box.innerHTML = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">
+            <div style="color:#166534;font-weight:600;margin-bottom:8px;">✅ 生成成功 ${r.codes.length} 个激活码</div>
+            <div style="font-family:monospace;font-size:12px;line-height:1.8;">
+                ${r.codes.map(c => `<div>${c.new_code} — ${c.plan_type === 'PERMANENT' ? '永久' : c.days + '天'}</div>`).join('')}
+            </div>
+            <button class="btn" style="margin-top:8px;" onclick="navigator.clipboard.writeText(\`${r.codes.map(c => c.new_code).join('\\n')}\`).then(()=>toast('已复制到剪贴板','success'))">📋 复制全部</button>
+        </div>`;
+        adminRefreshList();
+    } else {
+        box.innerHTML = `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;color:#991b1b;">❌ ${r.message}</div>`;
+    }
+}
+
+async function adminRefreshList() {
+    const pwd = localStorage.getItem('tb_admin_pwd');
+    const r = await SB.adminList(pwd);
+    const box = document.getElementById('admin-codes-list');
+    if (!box) return;
+    
+    if (r.ok) {
+        adminCodesCache = r.codes;
+        if (r.codes.length === 0) {
+            box.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">暂无激活码</div>';
+            return;
+        }
+        box.innerHTML = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr style="background:#f1f5f9;">
+                <th style="padding:6px;border:1px solid #e2e8f0;text-align:left;">激活码</th>
+                <th style="padding:6px;border:1px solid #e2e8f0;">类型</th>
+                <th style="padding:6px;border:1px solid #e2e8f0;">有效期</th>
+                <th style="padding:6px;border:1px solid #e2e8f0;">状态</th>
+                <th style="padding:6px;border:1px solid #e2e8f0;">操作</th>
+            </tr>
+            ${r.codes.map(c => `<tr>
+                <td style="padding:4px 6px;border:1px solid #e2e8f0;font-family:monospace;">${c.code}</td>
+                <td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;">${c.plan_type === 'PERMANENT' ? '永久' : '试用'}</td>
+                <td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;">${c.days >= 99999 ? '永久' : c.days + '天'}</td>
+                <td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;">${c.is_used ? '<span style="color:#dc2626;">❌ 已用</span>' : '<span style="color:#16a34a;">✅ 可用</span>'}</td>
+                <td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;">${c.is_used ? '-' : `<button class="btn" style="padding:2px 8px;font-size:11px;" onclick="adminDisable('${c.code}')">禁用</button>`}</td>
+            </tr>`).join('')}
+        </table></div>`;
+    } else {
+        box.innerHTML = `<div style="color:#991b1b;padding:20px;text-align:center;">❌ ${r.message}</div>`;
+    }
+}
+
+async function adminDisable(code) {
+    if (!confirm(`确定禁用激活码 ${code} 吗？`)) return;
+    const pwd = localStorage.getItem('tb_admin_pwd');
+    const r = await SB.adminDisable(pwd, code);
+    if (r.ok && r.success) {
+        toast('已禁用', 'success');
+        adminRefreshList();
+    } else {
+        toast('禁用失败', 'error');
+    }
 }
 
 // ============================================

@@ -201,6 +201,48 @@ async function cloudSyncScores(localScores) {
     }
 }
 
+// ====== 管理员函数（需要管理员密码）======
+async function adminGenerateCodes(pwd, plan, days, count) {
+    if (!supabaseReady || !supabase) return { ok: false, message: '云端未连接' };
+    try {
+        const { data, error } = await supabase.rpc('admin_generate_codes', {
+            admin_password: pwd,
+            plan: plan,
+            duration_days: days,
+            count: count
+        });
+        if (error) throw error;
+        return { ok: true, codes: data };
+    } catch (err) {
+        return { ok: false, message: err.message };
+    }
+}
+
+async function adminListCodes(pwd) {
+    if (!supabaseReady || !supabase) return { ok: false, message: '云端未连接' };
+    try {
+        const { data, error } = await supabase.rpc('admin_list_codes', { admin_password: pwd });
+        if (error) throw error;
+        return { ok: true, codes: data };
+    } catch (err) {
+        return { ok: false, message: err.message };
+    }
+}
+
+async function adminDisableCode(pwd, code) {
+    if (!supabaseReady || !supabase) return { ok: false, message: '云端未连接' };
+    try {
+        const { data, error } = await supabase.rpc('admin_disable_code', {
+            admin_password: pwd,
+            target_code: code
+        });
+        if (error) throw error;
+        return { ok: true, success: data };
+    } catch (err) {
+        return { ok: false, message: err.message };
+    }
+}
+
 // ====== 导出全局 ======
 window.SB = {
     init: initSupabase,
@@ -209,4 +251,7 @@ window.SB = {
     verifyCode: verifyActivationCode,
     syncStudents: cloudSyncStudents,
     syncScores: cloudSyncScores,
+    adminGenerate: adminGenerateCodes,
+    adminList: adminListCodes,
+    adminDisable: adminDisableCode,
 };
