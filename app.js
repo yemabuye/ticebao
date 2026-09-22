@@ -291,8 +291,8 @@ function renderAuth() {
             </div>
             ${authMode === 'signup' ? renderSignupStep1() : renderLoginForm()}
             ` : state.signupStep === 1 ? renderSignupStep2() : renderSignupStep3()}
+            ${renderAnnouncement()}
         </div>
-        ${renderAnnouncement()}
     </div>`;
 }
 
@@ -553,13 +553,18 @@ function renderNav(active) {
 // 公告栏
 // ============================================
 function renderAnnouncement() {
+    const signupTip = state.authed && state.userPlan === 'TRIAL'
+        ? `⏱ 免费使用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>（剩余 ${trialDaysLeft()} 天）`
+        : `✅ 注册即享免费试用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>`;
+    const expiredTip = state.userPlan === 'EXPIRED'
+        ? `<span style="color:#b91c1c;">⏰ 您的试用已结束，请购买永久版解锁全部功能</span><br>`
+        : '';
     return `
-    <div class="announcement-bar" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#7c2d12;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;">
-        <div style="font-weight:700;margin-bottom:4px;">📢 公告</div>
-        <div style="line-height:1.6;">
-            试用激活码有效期 <b>30 天</b>，到期后如需继续使用请购买永久版。<br>
-            💰 <b>购买永久版 / 技术支持</b>，请添加微信：<b style="font-size:15px;background:#7c2d12;color:#fef3c7;padding:2px 10px;border-radius:4px;">pp33721</b>
-        </div>
+    <div class="announcement-bar" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#7c2d12;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.7;">
+        <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">📢 公告</div>
+        ${expiredTip}
+        ${signupTip}<br>
+        💰 <b>购买永久版 / 技术支持</b>，请添加微信：<b style="font-size:15px;background:#7c2d12;color:#fef3c7;padding:2px 10px;border-radius:4px;display:inline-block;margin-top:2px;">pp33721</b>
     </div>`;
 }
 
@@ -575,8 +580,9 @@ async function manualSync() {
 }
 
 function renderHome() {
-    document.getElementById('app').innerHTML = renderNav('home') + renderAnnouncement() + `
+    document.getElementById('app').innerHTML = renderNav('home') + `
     <div class="container">
+        ${renderAnnouncement()}
         <div class="h2">📋 快速开始</div>
         <div class="card" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:white;">
             <div style="font-size:18px;font-weight:600;">⏱️ 50米跑计时</div>
