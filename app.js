@@ -373,17 +373,20 @@ async function verifyOtp() {
     toast('⏳ 验证中...', 'info');
     try {
         if (window.SB && SB.ready() && window.supabase) {
+            // 用 type: 'email' —— signInWithOtp 创建的 session 只能用 'email' 类型验证
             const { data, error } = await supabase.auth.verifyOtp({
                 email: state.signupEmail,
                 token: otp,
-                type: 'signup'
+                type: 'email'
             });
             if (error) throw error;
+            console.log('[体测宝] OTP 验证成功:', data);
         }
         state.signupStep = 2;
         toast('✅ 邮箱验证成功', 'success');
         renderAuth();
     } catch (e) {
+        console.error('[体测宝] OTP 验证失败:', e);
         toast('验证码错误或已过期，请重试', 'error');
     }
 }
