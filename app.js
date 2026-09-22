@@ -402,6 +402,38 @@ async function resendOtp() {
     }
 }
 
+async function finishSignup() {
+    const p1 = document.getElementById('auth-password').value;
+    const p2 = document.getElementById('auth-password2').value;
+    if (p1.length < 6) return toast('密码至少 6 位', 'error');
+    if (p1 !== p2) return toast('两次密码不一致', 'error');
+    
+    toast('⏳ 创建账号中...', 'info');
+    try {
+        // 验证码模式：用户已经 verifyOtp 成功了，Supabase 里有临时会话
+        // 用 updateUser 设置密码（让账号变成完整账号）
+        if (window.SB && SB.ready() && window.supabase) {
+            const { error } = await supabase.auth.updateUser({ password: p1 });
+            if (error) throw error;
+        }
+        
+        const email = state.signupEmail || 'user@unknown.local';
+        state.authed = true;
+        state.userEmail = email;
+        state.userPlan = isTrialExpired() ? 'EXPIRED' : 'TRIAL';
+        state.planExpires = null;
+        LS.set('tb_auth', { email, plan: state.userPlan, expires: null });
+        
+        state.signupStep = 0;
+        state.signupEmail = null;
+        
+        toast(`🎉 注册成功！${isTrialExpired() ? '试用已结束，请联系购买' : `免费使用到 ${TRIAL_END.toLocaleDateString('zh-CN')}`}`, 'success');
+        navigate('home');
+    } catch (e) {
+        toast('注册失败: ' + e.message, 'error');
+    }
+}
+
 // === 登录 ===
 async function doSignIn() {
     const email = document.getElementById('auth-email').value.trim();
@@ -1394,11 +1426,8 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
         } catch(e) { console.warn('自动同步跳过:', e.message); }
     }
     
-    // 🔥 关键：检测 Magic Link 回跳（用户点邮件里的链接后会回到这里）
-    const isMagicLink = await handleMagicLink();
-    
     if (!state.authed) {
-        renderAuth();  // 如果 handleMagicLink 成功，signupStep 已经是 2，会显示设密码页
+        renderAuth();
     } else {
         renderHome();
         if (state.userPlan === 'EXPIRED') setTimeout(addExpiredOverlay, 300);
