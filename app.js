@@ -945,6 +945,9 @@ function situpReset() { if (situpInterval) { clearInterval(situpInterval); situp
 let enduranceQueue = []; let endurancePhase = 'running'; let enduranceType = '800米跑';
 let enduranceRunning = false, enduranceStartTime = null, endurancePausedAt = 0, enduranceRafId = null;
 
+// 耐力跑成绩统一存 '耐力跑'（导出时按性别自动分到 800/1000 列）
+const ENDURANCE_PROJECT = '耐力跑';
+
 function renderEndurance() {
     const isClaim = endurancePhase === 'claiming';
     document.getElementById('app').innerHTML = renderNav('endurance') + `
@@ -998,12 +1001,12 @@ function renderEndurance() {
     document.onkeydown = (e) => { if (e.code === 'Space') { e.preventDefault(); if (!isClaim && enduranceRunning) enduranceCaptureQueue(); } };
 }
 
-function getSavedCount() { return state.scores.filter(sc => sc.project === enduranceType).length; }
+function getSavedCount() { return state.scores.filter(sc => sc.project === ENDURANCE_PROJECT).length; }
 
 function renderClaimStudentList() {
     if (state.students.length === 0) return '<div class="empty">请先导入学生名单</div>';
     const savedMap = {};
-    state.scores.filter(sc => sc.project === enduranceType).forEach(sc => { savedMap[sc.student_id] = sc; });
+    state.scores.filter(sc => sc.project === ENDURANCE_PROJECT).forEach(sc => { savedMap[sc.student_id] = sc; });
     const usedCount = Object.keys(savedMap).length;
     
     const byClass = {};
@@ -1032,7 +1035,7 @@ function claimToStudent(studentId) {
     const student = state.students.find(s => s.id === studentId);
     if (!student) return;
     const q = enduranceQueue[savedCount];
-    saveScore(studentId, enduranceType, q.seconds.toFixed(2), '秒');
+    saveScore(studentId, ENDURANCE_PROJECT, q.seconds.toFixed(2), '秒');
     toast(`队列#${savedCount+1} ${q.display} → ${student.name} ✓`, 'success');
     renderEndurance();
 }
@@ -1041,7 +1044,7 @@ function enduranceBackToRun() { endurancePhase = 'running'; renderEndurance(); }
 
 function enduranceResetAll() {
     if (!confirm('确定要清空所有计时和耐力跑成绩吗？此操作不可恢复！')) return;
-    state.scores = state.scores.filter(sc => sc.project !== enduranceType);
+    state.scores = state.scores.filter(sc => sc.project !== ENDURANCE_PROJECT);
     saveScores();
     enduranceRunning = false;
     if (enduranceRafId) cancelAnimationFrame(enduranceRafId);
