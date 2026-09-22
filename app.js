@@ -308,13 +308,45 @@ function renderSignupStep1() {
 
 function renderSignupStep2() {
     return `
-    <div style="text-align:center;margin-bottom:12px;font-size:13px;color:#888;">验证码已发送至 <b>${state.signupEmail}</b></div>
-    <div class="form-group">
-        <label class="label">邮箱验证码</label>
-        <input id="auth-otp" class="input" type="text" placeholder="请输入 6 位验证码" autocomplete="one-time-code" inputmode="numeric">
+    <div style="text-align:center;margin-bottom:16px;">
+        <div style="font-size:48px;">📧</div>
+        <div style="font-weight:600;margin:8px 0 4px;">验证邮件已发送</div>
+        <div style="font-size:13px;color:#888;">请查收 <b>${state.signupEmail}</b> 并点击邮件中的验证链接</div>
     </div>
-    <button class="btn btn-primary btn-block btn-lg" onclick="verifyOtp()">✅ 验证并继续</button>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#0c4a6e;">
+        💡 <b>提示：</b>点击链接后会自动回到本页面继续设置密码。<br>
+        如果没收到邮件，请检查垃圾邮件箱，或等待 1-2 分钟。
+    </div>
+    <button class="btn btn-primary btn-block btn-lg" onclick="checkMagicLinkManually()">✅ 我已点击链接，继续</button>
+    <button class="btn btn-block btn-ghost" onclick="resendMagicLink()">📨 重新发送邮件</button>
     <button class="btn btn-block btn-ghost" onclick="state.signupStep=0;renderAuth();">← 返回</button>`;
+}
+
+// 用户点了"我已点击链接，继续" —— 重新扫描 URL hash
+async function checkMagicLinkManually() {
+    if (await handleMagicLink()) {
+        // 成功则 renderAuth 已经会显示设密码页
+    } else {
+        toast('还没检测到链接参数，请先点击邮件中的链接', 'error');
+    }
+}
+
+async function resendMagicLink() {
+    if (!state.signupEmail) { state.signupStep = 0; renderAuth(); return; }
+    toast('⏳ 重新发送中...', 'info');
+    try {
+        if (window.SB && SB.ready() && window.supabase) {
+            const { error } = await supabase.auth.signInWithOtp({ 
+                email: state.signupEmail, 
+                shouldCreateUser: true,
+                emailRedirectTo: window.location.origin + window.location.pathname
+            });
+            if (error) throw error;
+        }
+        toast('✅ 已重新发送，请查收邮件', 'success');
+    } catch (e) {
+        toast('发送失败: ' + e.message, 'error');
+    }
 }
 
 function renderSignupStep3() {
@@ -350,41 +382,77 @@ async function sendOtp() {
     const email = document.getElementById('auth-email').value.trim();
     if (!email || !email.includes('@')) return toast('请输入有效邮箱', 'error');
     
-    toast('⏳ 发送验证码中...', 'info');
+    toast('⏳ 发送验证邮件中...', 'info');
     try {
         if (window.SB && SB.ready() && window.supabase) {
-            // Supabase OTP（Magic Link 改成 OTP 模式）
-            const { error } = await supabase.auth.signInWithOtp({ email, shouldCreateUser: true });
+            // Magic Link 模式：用户点邮件里的链接回跳
+            const { error } = await supabase.auth.signInWithOtp({ 
+                email, 
+                shouldCreateUser: true,
+                emailRedirectTo: window.location.origin + window.location.pathname
+            });
             if (error) throw error;
         }
         state.signupEmail = email;
-        state.signupStep = 1;
-        toast('✅ 验证码已发送，请查收邮箱', 'success');
+        state.signupStep = 1;  // 等待邮件点击
+        toast('✅ 验证邮件已发送，请查收并点击链接', 'success');
         renderAuth();
     } catch (e) {
         toast('发送失败: ' + e.message, 'error');
     }
 }
 
-async function verifyOtp() {
-    const otp = document.getElementById('auth-otp').value.trim();
-    if (!otp) return toast('请输入验证码', 'error');
+// Magic Link 回跳处理（URL hash 里有 access_token / token_hash）
+async function handleMagicLink() {
+    const hash = window.location.hash;
+    if (!hash) return false;
     
-    toast('⏳ 验证中...', 'info');
+    // 从 hash 中提取参数
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const tokenHash = params.get('token_hash');
+    const type = params.get('type');
+    
+    if (!accessToken && !tokenHash) return false;
+    
+    toast('⏳ 验证邮箱中...', 'info');
     try {
-        if (window.SB && SB.ready() && window.supabase) {
+        if (tokenHash && window.supabase) {
+            // verifyOtp 模式
             const { data, error } = await supabase.auth.verifyOtp({
-                email: state.signupEmail,
-                token: otp,
-                type: 'signup'
+                token_hash: tokenHash,
+                type: type || 'email'
+            });
+            if (error) throw error;
+        } else if (accessToken && window.supabase) {
+            // setSession 模式
+            const { data, error } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || ''
             });
             if (error) throw error;
         }
+        
+        // 清除 URL hash，不影响后续使用
+        window.history.replaceState(null, '', window.location.pathname);
+        
+        // 拿到邮箱，进入设密码步骤
+        if (window.supabase) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) {
+                state.signupEmail = user.email;
+            }
+        }
+        
         state.signupStep = 2;
-        toast('✅ 邮箱验证成功', 'success');
+        toast('✅ 邮箱验证成功！请设置密码', 'success');
         renderAuth();
+        return true;
     } catch (e) {
-        toast('验证码错误或已过期', 'error');
+        toast('验证失败: ' + e.message, 'error');
+        window.history.replaceState(null, '', window.location.pathname);
+        return false;
     }
 }
 
@@ -396,12 +464,18 @@ async function finishSignup() {
     
     toast('⏳ 创建账号中...', 'info');
     try {
-        // 本地状态：统一到期 TRIAL
+        // 用 Supabase 更新密码（Magic Link 用户没有初始密码）
+        if (window.SB && SB.ready() && window.supabase) {
+            const { error } = await supabase.auth.updateUser({ password: p1 });
+            if (error) throw error;
+        }
+        
+        const email = state.signupEmail || 'user@unknown.local';
         state.authed = true;
-        state.userEmail = state.signupEmail;
+        state.userEmail = email;
         state.userPlan = isTrialExpired() ? 'EXPIRED' : 'TRIAL';
         state.planExpires = null;
-        LS.set('tb_auth', { email: state.signupEmail, plan: state.userPlan, expires: null });
+        LS.set('tb_auth', { email, plan: state.userPlan, expires: null });
         
         state.signupStep = 0;
         state.signupEmail = null;
@@ -1405,8 +1479,11 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
         } catch(e) { console.warn('自动同步跳过:', e.message); }
     }
     
+    // 🔥 关键：检测 Magic Link 回跳（用户点邮件里的链接后会回到这里）
+    const isMagicLink = await handleMagicLink();
+    
     if (!state.authed) {
-        renderAuth();
+        renderAuth();  // 如果 handleMagicLink 成功，signupStep 已经是 2，会显示设密码页
     } else {
         renderHome();
         if (state.userPlan === 'EXPIRED') setTimeout(addExpiredOverlay, 300);
