@@ -1308,6 +1308,23 @@ function renderAdmin() {
                 <div style="text-align:center;color:#888;padding:20px;">加载中...</div>
             </div>
         </div>
+
+        <div class="card">
+            <div class="h2" style="font-size:14px;margin-bottom:12px;">🔑 修改管理员密码</div>
+            <div class="form-group" style="margin-bottom:8px;">
+                <label class="label">当前密码</label>
+                <input id="admin-old-pwd" class="input" type="password" placeholder="当前密码">
+            </div>
+            <div class="form-group" style="margin-bottom:8px;">
+                <label class="label">新密码（至少 4 位）</label>
+                <input id="admin-new-pwd" class="input" type="password" placeholder="新密码">
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label class="label">确认新密码</label>
+                <input id="admin-new-pwd2" class="input" type="password" placeholder="再输一次">
+            </div>
+            <button class="btn btn-primary btn-block" onclick="changeAdminPwd()">✅ 修改密码</button>
+        </div>
     </div>`;
     adminRefreshList();
 }
@@ -1321,6 +1338,10 @@ function renderAdminLogin() {
             <div style="font-size:12px;color:#888;margin-bottom:16px;">只有管理员才能进入此页面</div>
             <input id="admin-pwd" class="input" type="password" placeholder="管理员密码" style="margin-bottom:12px;" onkeydown="if(event.key==='Enter')adminLogin()">
             <button class="btn btn-primary btn-block" onclick="adminLogin()">登录</button>
+            <div style="margin-top:14px;font-size:12px;color:#aaa;">
+                忘记密码？去 Supabase SQL Editor 执行：<br>
+                <code style="background:#f1f5f9;padding:4px 8px;border-radius:4px;font-size:11px;color:#64748b;">UPDATE admin_config SET admin_pwd = 'tcb-admin-2026' WHERE id = 1;</code>
+            </div>
         </div>
     </div>`;
 }
@@ -1345,6 +1366,34 @@ function adminLogout() {
     adminLoggedIn = false;
     localStorage.removeItem('tb_admin_pwd');
     renderAdmin();
+}
+
+async function changeAdminPwd() {
+    const oldPwd = document.getElementById('admin-old-pwd').value.trim();
+    const newPwd = document.getElementById('admin-new-pwd').value.trim();
+    const newPwd2 = document.getElementById('admin-new-pwd2').value.trim();
+    
+    if (!oldPwd) return toast('请输入当前密码', 'error');
+    if (newPwd.length < 4) return toast('新密码至少 4 位', 'error');
+    if (newPwd !== newPwd2) return toast('两次新密码不一致', 'error');
+    if (newPwd === oldPwd) return toast('新密码不能和旧密码相同', 'error');
+    
+    toast('⏳ 修改中...', 'info');
+    try {
+        const { data, error } = await supabase.rpc('admin_update_password', {
+            old_pwd: oldPwd,
+            new_pwd: newPwd
+        });
+        if (error) throw error;
+        
+        localStorage.setItem('tb_admin_pwd', newPwd);
+        document.getElementById('admin-old-pwd').value = '';
+        document.getElementById('admin-new-pwd').value = '';
+        document.getElementById('admin-new-pwd2').value = '';
+        toast('✅ 密码修改成功！', 'success');
+    } catch (e) {
+        toast('修改失败：' + (e.message || '原密码可能不对'), 'error');
+    }
 }
 
 async function adminGenerate() {
