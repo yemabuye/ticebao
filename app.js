@@ -1338,10 +1338,6 @@ function renderAdminLogin() {
             <div style="font-size:12px;color:#888;margin-bottom:16px;">只有管理员才能进入此页面</div>
             <input id="admin-pwd" class="input" type="password" placeholder="管理员密码" style="margin-bottom:12px;" onkeydown="if(event.key==='Enter')adminLogin()">
             <button class="btn btn-primary btn-block" onclick="adminLogin()">登录</button>
-            <div style="margin-top:14px;font-size:12px;color:#aaa;">
-                忘记密码？去 Supabase SQL Editor 执行：<br>
-                <code style="background:#f1f5f9;padding:4px 8px;border-radius:4px;font-size:11px;color:#64748b;">UPDATE admin_config SET admin_pwd = 'tcb-admin-2026' WHERE id = 1;</code>
-            </div>
         </div>
     </div>`;
 }
