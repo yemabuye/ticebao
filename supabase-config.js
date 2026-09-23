@@ -41,7 +41,10 @@ async function initSupabase() {
 
     try {
         supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: { persistSession: false }
+            auth: { 
+                persistSession: true,  // ✅ session 存 localStorage，关闭浏览器不丢
+                autoRefreshToken: true  // ✅ 自动刷新 token，过期前悄悄换新的
+            }
         });
         // 测试连通性
         await supabase.rpc('validate_activation_code', { input_code: 'TCB-TRIAL-20260921-78A8D2' });
