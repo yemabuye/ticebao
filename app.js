@@ -343,6 +343,9 @@ function renderLoginForm() {
         <input id="auth-password" class="input" type="password" placeholder="******">
     </div>
     <button class="btn btn-primary btn-block btn-lg" onclick="doSignIn()">🔑 登录</button>
+    <div style="text-align:right;margin:8px 0;">
+        <a style="color:#2563eb;font-size:13px;cursor:pointer;" onclick="forgotPassword()">忘记密码？</a>
+    </div>
     <button class="btn btn-block btn-ghost" onclick="authMode='signup';renderAuth();">📝 没有账号？注册</button>`;
 }
 
@@ -413,14 +416,23 @@ async function finishSignup() {
     
     toast('⏳ 创建账号中...', 'info');
     try {
-        // 验证码模式：用户已经 verifyOtp 成功了，Supabase 里有临时会话
-        // 用 updateUser 设置密码（让账号变成完整账号）
-        if (window.SB && SB.ready() && window.supabase) {
-            const { error } = await supabase.auth.updateUser({ password: p1 });
-            if (error) throw error;
+        // 必须确保 Supabase 就绪
+        if (!window.SB || !SB.ready() || !window.supabase) {
+            return toast('❌ 云端未连接，无法设置密码。请刷新页面重试。', 'error');
+        }
+        if (!state.signupEmail) {
+            return toast('❌ 注册信息丢失，请重新注册。', 'error');
         }
         
-        const email = state.signupEmail || 'user@unknown.local';
+        // 强制设置密码（必须成功！）
+        const { error } = await supabase.auth.updateUser({ password: p1 });
+        if (error) {
+            console.error('[体测宝] 设置密码失败:', error);
+            return toast('❌ 设置密码失败: ' + error.message, 'error');
+        }
+        console.log('[体测宝] ✅ 密码设置成功！', state.signupEmail);
+        
+        const email = state.signupEmail;
         state.authed = true;
         state.userEmail = email;
         state.userPlan = isTrialExpired() ? 'EXPIRED' : 'TRIAL';
@@ -430,9 +442,10 @@ async function finishSignup() {
         state.signupStep = 0;
         state.signupEmail = null;
         
-        toast(`🎉 注册成功！${isTrialExpired() ? '试用已结束，请联系购买' : `免费使用到 ${TRIAL_END.toLocaleDateString('zh-CN')}`}`, 'success');
+        toast(`🎉 注册成功！${isTrialExpired() ? '试用已结束' : `免费使用到 ${TRIAL_END.toLocaleDateString('zh-CN')}`}`, 'success');
         navigate('home');
     } catch (e) {
+        console.error('[体测宝] finishSignup 异常:', e);
         toast('注册失败: ' + e.message, 'error');
     }
 }
@@ -485,6 +498,24 @@ async function doSignIn() {
         navigate('home');
     } catch (e) {
         toast('登录失败', 'error');
+    }
+}
+
+// === 忘记密码 ===
+async function forgotPassword() {
+    const email = prompt('📧 请输入您的注册邮箱，我们会发送重置密码链接：');
+    if (!email || !email.includes('@')) return;
+    
+    toast('⏳ 发送中...', 'info');
+    try {
+        if (!window.supabase) throw new Error('云端未连接');
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin
+        });
+        if (error) throw error;
+        toast('✅ 重置密码邮件已发送，请查收', 'success');
+    } catch (e) {
+        toast('发送失败: ' + e.message, 'error');
     }
 }
 
@@ -1464,6 +1495,76 @@ async function adminDisable(code) {
 }
 
 // ============================================
+// Magic Link / 重置密码 回跳处理
+// ============================================
+async function handleMagicLinkInUrl() {
+    try {
+        if (!window.supabase) return;
+        const hash = window.location.hash;
+        
+        // 解析 hash 参数
+        const params = new URLSearchParams(hash.substring(1));
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        const type = params.get('type');
+        const error = params.get('error');
+        const errorDesc = params.get('error_description');
+        
+        if (error) {
+            toast('❌ 链接无效: ' + (errorDesc || error), 'error');
+            window.location.hash = '';
+            return;
+        }
+        if (!accessToken) return;
+        
+        // 设置 session
+        const { data, error: setErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+        });
+        if (setErr) {
+            toast('❌ 验证失败: ' + setErr.message, 'error');
+            return;
+        }
+        
+        const user = data?.user;
+        if (!user) {
+            toast('❌ 未找到用户', 'error');
+            return;
+        }
+        
+        console.log('[体测宝] Magic Link 成功 type=' + type, user.email);
+        
+        // 清理 hash
+        window.history.replaceState(null, '', window.location.pathname);
+        
+        state.authed = true;
+        state.userEmail = user.email;
+        state.signupEmail = user.email; // 供 finishSignup 用
+        
+        if (type === 'recovery') {
+            // 重置密码 → 跳到设密码页面
+            state.signupStep = 2; // 复用 Step 2 的设密码界面
+            toast('✅ 邮箱验证成功，请设置新密码', 'success');
+        } else if (type === 'magiclink') {
+            // 注册验证 → 跳到设密码页面
+            state.signupStep = 2;
+            toast('✅ 邮箱验证成功，请设置密码', 'success');
+        } else {
+            toast('✅ 欢迎回来！', 'success');
+            LS.set('tb_auth', { email: user.email, plan: 'TRIAL', expires: null });
+            navigate('home');
+            return;
+        }
+        
+        renderAuth();
+    } catch (e) {
+        console.error('[体测宝] Magic Link 处理失败:', e);
+        toast('链接处理失败: ' + e.message, 'error');
+    }
+}
+
+// ============================================
 // 蜂鸣器
 // ============================================
 function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value = freq; osc.type = 'sine'; gain.gain.setValueAtTime(0.3, ctx.currentTime); osc.start(); osc.stop(ctx.currentTime + duration / 1000); osc.onended = () => ctx.close(); } catch(e) {} }
@@ -1472,6 +1573,12 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
 // 启动
 // ============================================
 (async function init() {
+    // ① 先处理 Magic Link / 重置密码链接
+    const hash = window.location.hash;
+    if (hash.includes('access_token=') || hash.includes('error=')) {
+        await handleMagicLinkInUrl();
+    }
+    
     loadFromStorage();
     if (window.SB) {
         await SB.init();
