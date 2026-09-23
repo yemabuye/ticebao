@@ -94,6 +94,53 @@ const EXPORT_COLUMNS = [
     '立定跳远','800米跑','1000米跑','引体向上'
 ];
 
+// ====== 班级筛选（全局，所有录入页面共用） ======
+window._classFilter = '全部';
+function _getAllClasses() {
+    const set = new Set();
+    state.students.forEach(s => set.add(`${s.grade||''}${s.class_name||'未分班'}`));
+    return Array.from(set).sort();
+}
+function _getFilteredStudents() {
+    if (window._classFilter === '全部') return state.students;
+    return state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === window._classFilter);
+}
+function _classFilterBar() {
+    const classes = _getAllClasses();
+    if (classes.length <= 1) return ''; // 只有一个班级不显示筛选器
+    const opts = ['全部', ...classes];
+    return `<div class="card" style="padding:10px 16px;margin-bottom:12px;background:#eff6ff;border-color:#bfdbfe;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:13px;color:#1e40af;font-weight:600;">🏫 班级筛选：</span>
+            <select class="input" style="padding:4px 10px;font-size:13px;width:auto;" 
+                onchange="window._classFilter=this.value;document.querySelectorAll('.filter-reload').forEach(fn=>fn());renderHome();">
+                ${opts.map(c => `<option value="${c}" ${c===window._classFilter?'selected':''}>${c}</option>`).join('')}
+            </select>
+            <span style="font-size:12px;color:#64748b;">当前 ${_getFilteredStudents().length} / ${state.students.length} 人</span>
+        </div>
+    </div>`;
+}
+
+// ====== 语音播报（Web Speech API，纯前端） ======
+window._speechQueue = [];
+window._speechPlaying = false;
+function _speak(text) {
+    if (!('speechSynthesis' in window)) return; // 浏览器不支持
+    try {
+        // 停掉当前播报，立即播新的
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'zh-CN';
+        u.rate = 1.0;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+        speechSynthesis.speak(u);
+    } catch(e) { /* 忽略 */ }
+}
+function _stopSpeak() {
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
 // ============================================
 // 路由
 // ============================================
@@ -114,7 +161,11 @@ function navigate(view) {
         case 'rope': renderRope(); break;
         case 'situp': renderSitup(); break;
         case 'endurance': renderEndurance(); break;
-        case 'input': renderInput(); break;
+        case 'height': renderHeightEntry(); break;
+        case 'vital': renderSingleEntry('肺活量','vital','ml'); break;
+        case 'longjump': renderSingleEntry('立定跳远','longjump','cm'); break;
+        case 'sitflex': renderSingleEntry('坐位体前屈','sitflex','cm'); break;
+        case 'rollcall': renderRollCall(); break;
         case 'students': renderStudents(); break;
         case 'export': renderExport(); break;
         case 'analysis': renderAnalysis(); break;
@@ -561,7 +612,11 @@ function renderNav(active) {
         { id: 'rope', label: '🪢 跳绳' },
         { id: 'situp', label: '🤸 仰卧起坐' },
         { id: 'endurance', label: '🏃 耐力跑' },
-        { id: 'input', label: '✏️ 录入' },
+        { id: 'height', label: '📏 身高体重' },
+        { id: 'vital', label: '💨 肺活量' },
+        { id: 'longjump', label: '🦘 跳远' },
+        { id: 'sitflex', label: '📐 体前屈' },
+        { id: 'rollcall', label: '📢 点名' },
         { id: 'students', label: '👥 名单' },
         { id: 'analysis', label: '📊 分析' },
         { id: 'export', label: '📤 导出' },
@@ -627,7 +682,11 @@ function renderHome() {
             <div class="card" onclick="navigate('rope')" style="cursor:pointer;"><div style="font-size:24px;">🪢</div><div style="font-weight:600;margin-top:6px;">跳绳计数</div><div class="text-muted" style="font-size:12px;">60秒倒计时 + 手动点按</div></div>
             <div class="card" onclick="navigate('situp')" style="cursor:pointer;"><div style="font-size:24px;">🤸</div><div style="font-weight:600;margin-top:6px;">仰卧起坐</div><div class="text-muted" style="font-size:12px;">60秒计时 + 计数</div></div>
             <div class="card" onclick="navigate('endurance')" style="cursor:pointer;"><div style="font-size:24px;">🏃‍♂️</div><div style="font-weight:600;margin-top:6px;">耐力跑</div><div class="text-muted" style="font-size:12px;">800米/1000米计时</div></div>
-            <div class="card" onclick="navigate('input')" style="cursor:pointer;"><div style="font-size:24px;">✏️</div><div style="font-weight:600;margin-top:6px;">成绩录入</div><div class="text-muted" style="font-size:12px;">跳远/坐位体前屈等</div></div>
+            <div class="card" onclick="navigate('height')" style="cursor:pointer;"><div style="font-size:24px;">📏</div><div style="font-weight:600;margin-top:6px;">身高体重</div><div class="text-muted" style="font-size:12px;">自动计算 BMI</div></div>
+            <div class="card" onclick="navigate('vital')" style="cursor:pointer;"><div style="font-size:24px;">💨</div><div style="font-weight:600;margin-top:6px;">肺活量</div><div class="text-muted" style="font-size:12px;">成绩录入</div></div>
+            <div class="card" onclick="navigate('longjump')" style="cursor:pointer;"><div style="font-size:24px;">🦘</div><div style="font-weight:600;margin-top:6px;">立定跳远</div><div class="text-muted" style="font-size:12px;">成绩录入</div></div>
+            <div class="card" onclick="navigate('sitflex')" style="cursor:pointer;"><div style="font-size:24px;">📐</div><div style="font-weight:600;margin-top:6px;">坐位体前屈</div><div class="text-muted" style="font-size:12px;">成绩录入</div></div>
+            <div class="card" onclick="navigate('rollcall')" style="cursor:pointer;"><div style="font-size:24px;">📢</div><div style="font-weight:600;margin-top:6px;">排队点名</div><div class="text-muted" style="font-size:12px;">语音播报名字</div></div>
         </div>
         <div class="h2" style="margin-top:24px;">📚 数据管理</div>
         <div class="card" onclick="navigate('students')" style="cursor:pointer;"><div class="flex-between"><div><div style="font-weight:600;">👥 学生名单</div><div class="text-muted" style="font-size:12px;">共 ${state.students.length} 名学生 · Excel 导入</div></div><span>→</span></div></div>
@@ -741,7 +800,7 @@ function renderTimerClaimList() {
     const usedCount = Object.keys(savedMap).length;
     
     const byClass = {};
-    state.students.forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
     
     return Object.entries(byClass).map(([cls, list]) => `
         <div class="group-header" style="font-size:13px;">${cls} (${list.length}人)</div>
@@ -921,18 +980,21 @@ function ropeReset() { if (state.countdownInterval) { clearInterval(state.countd
 function renderRopeStudents() {
     if (state.students.length === 0) return '<div class="empty">暂无学生，请先导入名单</div>';
     const byClass = {};
-    state.students.forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
     return Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}（${list.length}人）</div>${list.map(s => { const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === '一分钟跳绳'); return `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''}</span></div><input class="score-input-box" type="number" placeholder="次数" value="${sc?.value||''}" onchange="saveScore('${s.id}','一分钟跳绳',this.value,'次'); showLevel('${s.id}','一分钟跳绳',this.value);"><div class="score-level" id="qlevel-${s.id}-一分钟跳绳"></div></div>`; }).join('')}`).join('');
 }
-function showLevel(studentId, project, value) {
+function showLevel(studentId, project, value, suppressDOM) {
     const student = state.students.find(s => s.id === studentId);
-    if (!student) return;
+    if (!student) return null;
     const result = getScore(student.grade, student.gender, project, value);
-    if (!result) return;
-    const el = document.getElementById(`qlevel-${studentId}-${project}`);
-    if (!el) return;
-    const badge = result.level === '优秀' ? 'badge-excellent' : result.level === '良好' ? 'badge-good' : result.level === '及格' ? 'badge-pass' : 'badge-fail';
-    el.innerHTML = `<span class="badge ${badge}">${result.level} ${result.score}分</span>`;
+    if (!result) return null;
+    if (!suppressDOM) {
+        const el = document.getElementById(`qlevel-${studentId}-${project}`);
+        if (!el) return result.level;
+        const badge = result.level === '优秀' ? 'badge-excellent' : result.level === '良好' ? 'badge-good' : result.level === '及格' ? 'badge-pass' : 'badge-fail';
+        el.innerHTML = `<span class="badge ${badge}">${result.level} ${result.score}分</span>`;
+    }
+    return result.level;
 }
 
 // ============================================
@@ -1042,7 +1104,7 @@ function renderClaimStudentList() {
     const usedCount = Object.keys(savedMap).length;
     
     const byClass = {};
-    state.students.forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
     
     return Object.entries(byClass).map(([cls, list]) => `
         <div class="group-header" style="font-size:13px;">${cls} (${list.length}人)</div>
@@ -1134,43 +1196,37 @@ function enduranceFinishAll() {
 }
 
 // ============================================
-// 快速录入
+// 身高体重 (BMI) 独立录入
 // ============================================
-let currentInputProject = '身高体重(BMI)';
-function renderInput() {
-    document.getElementById('app').innerHTML = renderNav('input') + `
+function renderHeightEntry() {
+    document.getElementById('app').innerHTML = renderNav('height') + `
     <div class="container">
+        ${_classFilterBar()}
         <div class="card">
-            <div class="h2">✏️ 快速录入</div>
-            <div class="project-tabs">
-                ${['身高体重(BMI)','肺活量','立定跳远','坐位体前屈','50米×8往返跑','1分钟跳绳','仰卧起坐'].map(p =>
-                    `<div class="project-tab ${p===currentInputProject?'active':''}" onclick="currentInputProject='${p}';renderInput();">${p}</div>`).join('')}
-            </div>
+            <div class="h2">📏 身高体重录入 (自动计算 BMI)</div>
+            <div class="text-muted" style="font-size:12px;margin-top:4px;">输入身高(cm)和体重(kg)，自动判定 BMI 等级</div>
         </div>
         <div class="card" id="input-card"></div>
     </div>`;
+    _renderBMI();
+}
+function _renderBMI() {
     const el = document.getElementById('input-card');
     if (!el) return;
     if (state.students.length === 0) { el.innerHTML = '<div class="empty">暂无学生，请先导入名单</div>'; return; }
     const byClass = {};
-    state.students.forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
     el.innerHTML = Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}</div>${list.map(s => {
-        const scHeight = state.scores.find(sc => sc.student_id === s.id && sc.project === '身高');
-        const scWeight = state.scores.find(sc => sc.student_id === s.id && sc.project === '体重');
-        const projKey = currentInputProject.replace('1分钟','一分钟').replace('仰卧起坐','一分钟仰卧起坐');
-        const scProj = state.scores.find(sc => sc.student_id === s.id && sc.project === projKey);
-        let inputs = '';
-        if (currentInputProject === '身高体重(BMI)') {
-            inputs = `<input class="score-input-box" type="number" placeholder="身高cm" value="${scHeight?.value||''}" onchange="saveScore('${s.id}','身高',this.value,'cm');recalcBMI('${s.id}');" style="width:80px;">
-                <input class="score-input-box" type="number" placeholder="体重kg" step="0.1" value="${scWeight?.value||''}" onchange="saveScore('${s.id}','体重',this.value,'kg');recalcBMI('${s.id}');" style="width:80px;">
-                <span class="score-level" id="bmi-${s.id}"></span>`;
-        } else {
-            inputs = `<input class="score-input-box" type="number" step="0.1" placeholder="${currentInputProject}" value="${scProj?.value||''}" onchange="saveScore('${s.id}','${projKey}',this.value);showLevel('${s.id}','${projKey}',this.value);">
-                <span class="score-level" id="qlevel-${s.id}-${projKey}"></span>`;
-        }
-        return `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>${inputs}</div>`;
+        const scH = state.scores.find(sc => sc.student_id === s.id && sc.project === '身高');
+        const scW = state.scores.find(sc => sc.student_id === s.id && sc.project === '体重');
+        return `<div class="score-input-row">
+            <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
+            <input class="score-input-box" type="number" placeholder="身高cm" value="${scH?.value||''}" onchange="saveScore('${s.id}','身高',this.value,'cm');_renderBMI();" style="width:85px;">
+            <input class="score-input-box" type="number" placeholder="体重kg" step="0.1" value="${scW?.value||''}" onchange="saveScore('${s.id}','体重',this.value,'kg');_renderBMI();" style="width:85px;">
+            <span class="score-level" id="bmi-${s.id}"></span>
+        </div>`;
     }).join('')}`).join('');
-    state.students.forEach(s => { if (currentInputProject === '身高体重(BMI)') recalcBMI(s.id); else { const projKey = currentInputProject.replace('1分钟','一分钟').replace('仰卧起坐','一分钟仰卧起坐'); const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === projKey); if (sc) showLevel(s.id, projKey, sc.value); } });
+    state.students.forEach(s => { const hSc = state.scores.find(sc => sc.student_id === s.id && sc.project === '身高'); const wSc = state.scores.find(sc => sc.student_id === s.id && sc.project === '体重'); if (hSc && wSc) recalcBMI(s.id); });
 }
 function recalcBMI(studentId) {
     const student = state.students.find(s => s.id === studentId);
@@ -1180,6 +1236,55 @@ function recalcBMI(studentId) {
     if (!hSc || !wSc || !el) return;
     const result = calcBMI(student.grade, student.gender, { height: hSc.value, weight: wSc.value });
     if (result) { const badge = result.level === '正常' ? 'badge-good' : result.level === '低体重' ? 'badge-pass' : result.level === '超重' ? 'badge-warning' : 'badge-fail'; el.innerHTML = `<span class="badge ${badge}">BMI:${result.value}</span>`; }
+}
+
+// ============================================
+// 单项目通用录入（肺活量/跳远/坐位体前屈）
+// ============================================
+function renderSingleEntry(project, navId, unit) {
+    const iconMap = { '肺活量': '💨', '立定跳远': '🦘', '坐位体前屈': '📐', '50米×8往返跑': '🔁' };
+    const icon = iconMap[project] || '📝';
+    document.getElementById('app').innerHTML = renderNav(navId) + `
+    <div class="container">
+        ${_classFilterBar()}
+        <div class="card">
+            <div class="h2">${icon} ${project} 成绩录入</div>
+            <div class="text-muted" style="font-size:12px;margin-top:4px;">单位：${unit} · 每个学生一个输入框，自动计算等级</div>
+        </div>
+        <div class="card" id="input-card"></div>
+    </div>`;
+    _renderSingle(project, unit);
+}
+function _renderSingle(project, unit) {
+    const el = document.getElementById('input-card');
+    if (!el) return;
+    if (state.students.length === 0) { el.innerHTML = '<div class="empty">暂无学生，请先导入名单</div>'; return; }
+    const byClass = {};
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    const existing = state.scores.find(sc => sc.project === project); // 检查有没有评分表
+    const showLevel = !!existing;
+    el.innerHTML = Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}</div>${list.map(s => {
+        const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === project);
+        const onChg = `saveScore('${s.id}','${project}',this.value,'${unit}');${showLevel?'showLevelBadge(\"'+s.id+'\",\"'+project+'\",this.value);':''}`;
+        return `<div class="score-input-row">
+            <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
+            <input class="score-input-box" type="number" step="0.1" placeholder="${unit}" value="${sc?.value||''}" onchange="${onChg}">
+            <span class="score-level" id="sl-${s.id}-${project}"></span>
+        </div>`;
+    }).join('')}`).join('');
+    if (showLevel) state.students.forEach(s => { const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === project); if (sc) showLevelBadge(s.id, project, sc.value); });
+}
+function showLevelBadge(studentId, project, value) {
+    const el = document.getElementById(`sl-${studentId}-${project}`);
+    if (!el || !value) { if (el) el.innerHTML = ''; return; }
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return;
+    // 评分逻辑复用 showLevel
+    const level = showLevel(studentId, project, value, true);
+    if (level) {
+        const badge = level === '优秀' || level === '满分' ? 'badge-excellent' : level === '良好' ? 'badge-good' : level === '及格' || level === '通过' ? 'badge-pass' : 'badge-fail';
+        el.innerHTML = `<span class="badge ${badge}">${level}</span>`;
+    }
 }
 
 // ============================================
@@ -1202,7 +1307,7 @@ function renderStudents() {
     const el = document.getElementById('students-list');
     if (state.students.length === 0) { el.innerHTML = '<div class="card empty">📋 还没有学生名单<br><span style="font-size:12px;">点"模板"下载，填好后点"导入"</span></div>'; return; }
     const byClass = {};
-    state.students.forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
+    _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
     el.innerHTML = Object.entries(byClass).map(([cls, list]) => `<div class="card"><div class="flex-between" style="margin-bottom:8px;"><div class="h2" style="margin:0;">${cls} <span style="font-size:14px;color:var(--text-muted);">(${list.length}人)</span></div><button class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){state.students=state.students.filter(s=>'${cls}'.indexOf((s.grade||'')+(s.class_name||'未分班'))<0);saveStudents();renderStudents();}">删除班级</button></div>${list.map(s => `<div class="student-row"><div class="student-info"><div class="name">${s.name}</div><div class="meta">${s.gender||''} ${s.student_id||''}</div></div><button class="btn btn-sm btn-ghost" onclick="deleteStudent('${s.id}');renderStudents();">删除</button></div>`).join('')}</div>`).join('');
 }
 function downloadTemplate() {
@@ -1295,6 +1400,163 @@ function doExport() {
     const now = new Date();
     XLSX.writeFile(XLSX.utils.book_new(), `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`);
     toast('导出成功！', 'success');
+}
+
+// ============================================
+// 管理员后台
+// ============================================
+// 排队点名（语音播报）
+// ============================================
+let rollCallTimer = null;
+let rollCallIndex = 0;
+let rollCallAutoPlaying = false;
+let rollCallIntervalSec = 5; // 间隔秒数
+function renderRollCall() {
+    if (rollCallTimer) { clearInterval(rollCallTimer); rollCallTimer = null; }
+    rollCallAutoPlaying = false;
+    
+    const students = _getFilteredStudents();
+    const count = students.length;
+    
+    document.getElementById('app').innerHTML = renderNav('rollcall') + `
+    <div class="container">
+        ${_classFilterBar()}
+        <div class="card">
+            <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+                <div>
+                    <div class="h2" style="margin:0;">📢 排队点名</div>
+                    <div class="text-muted" style="font-size:12px;margin-top:4px;">共 ${count} 名学生 · 点击名字语音播报 · 支持自动顺序点名</div>
+                </div>
+                <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:13px;color:#64748b;">间隔</span>
+                    <select id="rc-interval" class="input" style="padding:4px 8px;font-size:13px;width:auto;" onchange="rollCallIntervalSec=parseInt(this.value);document.querySelectorAll('.interval-reload').forEach(fn=>fn());">
+                        <option value="3" ${rollCallIntervalSec===3?'selected':''}>3秒</option>
+                        <option value="5" ${rollCallIntervalSec===5?'selected':''}>5秒</option>
+                        <option value="8" ${rollCallIntervalSec===8?'selected':''}>8秒</option>
+                        <option value="10" ${rollCallIntervalSec===10?'selected':''}>10秒</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="rollCallStartAuto()">▶ 自动点名</button>
+                    <button class="btn btn-danger btn-sm" onclick="rollCallStopAuto()">⏹ 停止</button>
+                    <button class="btn btn-sm btn-ghost" onclick="rollCallReset()">🔄 重置</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="rc-progress" style="background:#f0fdf4;border:1px solid #86efac;display:none;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="font-size:18px;">🔊</div>
+                <div style="flex:1;">
+                    <div style="font-size:13px;color:#15803d;font-weight:600;">
+                        正在点名 <span id="rc-now-name">--</span>
+                        <span id="rc-now-idx" style="color:#94a3b8;margin-left:8px;">1/${count}</span>
+                    </div>
+                    <div style="background:#e2e8f0;height:6px;border-radius:3px;margin-top:6px;overflow:hidden;">
+                        <div id="rc-bar" style="background:#22c55e;height:100%;width:0%;transition:width 0.3s;"></div>
+                    </div>
+                </div>
+                <div class="flex" style="gap:6px;">
+                    <button class="btn btn-sm btn-ghost" onclick="rollCallPrev()">⬅ 上一个</button>
+                    <button class="btn btn-sm btn-ghost" onclick="rollCallNext()">跳过 ➡</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="group-header" style="font-size:13px;color:#64748b;">点击名字手动播报，或点"自动点名"顺序播放</div>
+            ${count === 0 ? '<div class="empty">暂无学生，请先导入名单</div>' : students.map((s, i) => `
+                <div id="rc-row-${i}" class="rc-row" onclick="rollCallSpeakOne(${i})" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;">
+                    <span id="rc-check-${i}" style="font-size:20px;color:#94a3b8;">⚪</span>
+                    <span style="font-size:14px;color:#64748b;width:28px;text-align:center;">#${i+1}</span>
+                    <span style="flex:1;font-size:15px;font-weight:500;">${s.name}</span>
+                    <span style="font-size:12px;color:#94a3b8;">${s.gender||''} ${s.grade||''}${s.class_name||''}</span>
+                    <span style="font-size:20px;color:#60a5fa;">🔊</span>
+                </div>
+            `).join('')}
+        </div>
+    </div>`;
+    
+    // 样式
+    const styleId = 'rc-inject-style';
+    if (!document.getElementById(styleId)) {
+        const st = document.createElement('style');
+        st.id = styleId;
+        st.textContent = `.rc-row:hover { background: #f1f5f9; border-color: #e2e8f0; } .rc-row.active { background: #fef3c7; border-color: #f59e0b; }`;
+        document.head.appendChild(st);
+    }
+}
+function rollCallSpeakOne(idx) {
+    const students = _getFilteredStudents();
+    if (!students[idx]) return;
+    // 高亮当前行
+    document.querySelectorAll('.rc-row').forEach(el => el.classList.remove('active'));
+    const row = document.getElementById(`rc-row-${idx}`);
+    if (row) row.classList.add('active');
+    // 播报："XXX，请出列"
+    _speak(`${students[idx].name}，请出列`);
+}
+function rollCallMarkCheck(idx) {
+    const el = document.getElementById(`rc-check-${idx}`);
+    if (el) el.textContent = '✅';
+}
+function rollCallStartAuto() {
+    if (rollCallAutoPlaying) return;
+    const students = _getFilteredStudents();
+    if (students.length === 0) return toast('暂无学生', 'error');
+    
+    // 重置到下一个未完成的
+    if (rollCallIndex >= students.length) rollCallIndex = 0;
+    
+    rollCallAutoPlaying = true;
+    document.getElementById('rc-progress').style.display = 'block';
+    
+    // 立即播第一个
+    rollCallPlayCurrent();
+    
+    // 定时播下一个
+    const intervalMs = rollCallIntervalSec * 1000;
+    rollCallTimer = setInterval(() => rollCallPlayNext(), intervalMs);
+    toast(`▶ 开始自动点名，间隔 ${rollCallIntervalSec} 秒`, 'info');
+}
+function rollCallStopAuto() {
+    rollCallAutoPlaying = false;
+    if (rollCallTimer) { clearInterval(rollCallTimer); rollCallTimer = null; }
+    _stopSpeak();
+    document.getElementById('rc-progress').style.display = 'none';
+    toast('⏹ 已停止点名', 'info');
+}
+function rollCallPlayCurrent() {
+    const students = _getFilteredStudents();
+    const idx = rollCallIndex;
+    if (!students[idx]) { rollCallStopAuto(); toast('✅ 全部点完', 'success'); return; }
+    
+    const bar = document.getElementById('rc-bar');
+    if (bar) bar.style.width = `${((idx + 1) / students.length) * 100}%`;
+    const nameEl = document.getElementById('rc-now-name');
+    if (nameEl) nameEl.textContent = students[idx].name;
+    const idxEl = document.getElementById('rc-now-idx');
+    if (idxEl) idxEl.textContent = `${idx + 1}/${students.length}`;
+    
+    rollCallSpeakOne(idx);
+}
+function rollCallPlayNext() {
+    rollCallMarkCheck(rollCallIndex);
+    rollCallIndex++;
+    rollCallPlayCurrent();
+}
+function rollCallNext() {
+    rollCallMarkCheck(rollCallIndex);
+    rollCallIndex++;
+    rollCallPlayCurrent();
+}
+function rollCallPrev() {
+    rollCallIndex = Math.max(0, rollCallIndex - 1);
+    rollCallPlayCurrent();
+}
+function rollCallReset() {
+    rollCallStopAuto();
+    rollCallIndex = 0;
+    document.querySelectorAll('.rc-check').forEach(el => { if (el) el.textContent = '⚪'; });
+    document.querySelectorAll('.rc-row').forEach(el => el.classList.remove('active'));
 }
 
 // ============================================
