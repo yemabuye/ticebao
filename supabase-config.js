@@ -204,6 +204,51 @@ async function cloudSyncScores(localScores) {
     }
 }
 
+// ====== 云端同步：请假记录 ======
+// 全量同步（支持撤销删除：云端有但本地没有 → 删除；本地有但云端没有 → upsert）
+async function cloudSyncAbsences(localAbsences) {
+    if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
+
+    try {
+        const { data: cloudAbs, error: fetchErr } = await supabase
+            .from('absences')
+            .select('*')
+            .eq('teacher_uuid', teacherUuid);
+        if (fetchErr) throw fetchErr;
+
+        const localIds = new Set(localAbsences.map(a => a.id));
+        const cloudIds = new Set((cloudAbs || []).map(a => a.id));
+
+        // 云端有但本地没有 → 已撤销，删除
+        const toDelete = (cloudAbs || []).filter(a => !localIds.has(a.id)).map(a => a.id);
+        if (toDelete.length > 0) {
+            const { error } = await supabase.from('absences').delete().in('id', toDelete);
+            if (error) console.warn('[Supabase] 请假删除失败:', error.message);
+        }
+
+        // 本地有但云端没有 → 新增
+        const toInsert = localAbsences
+            .filter(a => !cloudIds.has(a.id))
+            .map(a => ({
+                id: a.id,
+                teacher_uuid: teacherUuid,
+                student_id: a.student_id,
+                project: a.project,
+                date: a.date,
+                note: a.note || null,
+            }));
+        if (toInsert.length > 0) {
+            const { error } = await supabase.from('absences').upsert(toInsert);
+            if (error) console.warn('[Supabase] 请假推送失败:', error.message);
+        }
+
+        return { status: 'synced', count: localAbsences.length };
+    } catch (err) {
+        console.warn('[Supabase] 请假同步失败（如果没建 absences 表可忽略）:', err.message);
+        return { status: 'offline', count: 0 };
+    }
+}
+
 // ====== 管理员函数（需要管理员密码）======
 async function adminGenerateCodes(pwd, plan, days, count) {
     if (!supabaseReady || !supabase) return { ok: false, message: '云端未连接' };
@@ -254,6 +299,7 @@ window.SB = {
     verifyCode: verifyActivationCode,
     syncStudents: cloudSyncStudents,
     syncScores: cloudSyncScores,
+    syncAbsences: cloudSyncAbsences,
     adminGenerate: adminGenerateCodes,
     adminList: adminListCodes,
     adminDisable: adminDisableCode,

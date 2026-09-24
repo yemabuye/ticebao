@@ -21,6 +21,7 @@ let state = {
     signupEmail: null,
     students: [],
     scores: [],
+    absences: [],
     currentGrade: null,
     currentClass: null,
     timerStartTime: null,
@@ -44,6 +45,7 @@ const LS = {
 function loadFromStorage() {
     state.students = LS.get('tb_students', []);
     state.scores = LS.get('tb_scores', []);
+    state.absences = LS.get('tb_absences', []);
     
     const auth = LS.get('tb_auth', null);
     if (auth) {
@@ -70,9 +72,61 @@ function saveStudents() {
     // 异步推送到云端（连不上就跳过，不阻塞主流程）
     if (window.SB && SB.ready()) SB.syncStudents(state.students).catch(() => {});
 }
-function saveScores() { 
-    LS.set('tb_scores', state.scores); 
+function saveScores() {
+    LS.set('tb_scores', state.scores);
     if (window.SB && SB.ready()) SB.syncScores(state.scores).catch(() => {});
+}
+
+// ====== 请假记录（独立存储，不混入成绩，避免污染统计） ======
+function saveAbsences() {
+    LS.set('tb_absences', state.absences);
+    if (window.SB && SB.ready()) SB.syncAbsences(state.absences).catch(() => {});
+}
+function getAbsence(studentId, project) { return state.absences.find(a => a.student_id === studentId && a.project === project); }
+function toggleAbsence(studentId, project, navId) {
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return;
+    const existing = getAbsence(studentId, project);
+    if (existing) {
+        state.absences = state.absences.filter(a => a !== existing);
+        saveAbsences();
+        toast(`${student.name} 已取消「${project}」请假`, 'success');
+    } else {
+        const note = prompt(`给 ${student.name} 记「${project}」请假\n原因（可留空，直接点确定）：`);
+        if (note === null) return; // 点了取消
+        state.absences.push({ id: genUUID(), student_id: studentId, project, date: new Date().toISOString().slice(0, 10), note: note.trim() });
+        saveAbsences();
+        toast(`${student.name} 已记「${project}」请假`, 'success');
+    }
+    navigate(navId);
+}
+// 行内请假按钮（已请假显示红标记 + 撤销按钮）
+function _absenceCell(studentId, project, navId) {
+    const abs = getAbsence(studentId, project);
+    if (abs) {
+        const tip = abs.note ? `（${abs.note}）` : '';
+        return `<span class="badge badge-fail" style="font-size:11px;margin:0 4px;" title="${tip}">请假${abs.note ? '·' + abs.note : ''}</span><button class="btn btn-sm btn-ghost" style="padding:4px 8px;font-size:12px;" onclick="toggleAbsence('${studentId}','${project}','${navId}')">↩ 撤销</button>`;
+    }
+    return `<button class="btn btn-sm btn-ghost" style="padding:4px 8px;font-size:12px;color:#dc2626;" onclick="toggleAbsence('${studentId}','${project}','${navId}')">🚫 请假</button>`;
+}
+// 导出请假名单 Excel（project 不传 = 导出全部项目）
+function exportAbsences(project) {
+    const list = project ? state.absences.filter(a => a.project === project) : state.absences;
+    if (list.length === 0) return toast('没有请假记录', 'error');
+    const stu = id => state.students.find(s => s.id === id);
+    const aoa = [['姓名', '班级', '性别', '请假项目', '请假日期', '原因备注']];
+    list.forEach(a => {
+        const s = stu(a.student_id);
+        aoa.push([s?.name || '(学生已删除)', s ? `${s.grade || ''}${s.class_name || ''}` : '', s?.gender || '', a.project, a.date, a.note || '']);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 12 }, { wch: 16 }, { wch: 6 }, { wch: 16 }, { wch: 12 }, { wch: 24 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '请假名单');
+    const now = new Date();
+    const tag = project ? `_${project}` : '';
+    XLSX.writeFile(wb, `体测宝_请假名单${tag}_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`);
+    toast('请假名单导出成功！', 'success');
 }
 
 // ====== 年级编号映射 ======
@@ -663,7 +717,8 @@ async function manualSync() {
     toast('⏳ 正在同步到云端...', 'info');
     const studentResult = await SB.syncStudents(state.students);
     const scoreResult = await SB.syncScores(state.scores);
-    const total = (studentResult.count || 0) + (scoreResult.count || 0);
+    const absResult = await SB.syncAbsences(state.absences);
+    const total = (studentResult.count || 0) + (scoreResult.count || 0) + (absResult.count || 0);
     toast(`☁️ 同步完成！共 ${total} 条数据`, 'success');
     renderNav(document.querySelector('.nav-item.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1] || 'home');
 }
@@ -708,13 +763,13 @@ function genUUID() {
 }
 
 function addStudent(s) { s.id = genUUID(); state.students.push(s); saveStudents(); }
-function deleteStudent(id) { state.students = state.students.filter(s => s.id !== id); state.scores = state.scores.filter(sc => sc.student_id !== id); saveStudents(); saveScores(); }
+function deleteStudent(id) { state.students = state.students.filter(s => s.id !== id); state.scores = state.scores.filter(sc => sc.student_id !== id); state.absences = state.absences.filter(a => a.student_id !== id); saveStudents(); saveScores(); saveAbsences(); }
 function saveScore(studentId, project, value, unit = '') {
     state.scores = state.scores.filter(sc => !(sc.student_id === studentId && sc.project === project));
     state.scores.push({ id: genUUID(), student_id: studentId, project, value: parseFloat(value), unit, recorded_at: new Date().toISOString() });
     saveScores();
 }
-function clearAll() { if (!confirm('确定要清空所有学生和成绩数据吗？此操作不可恢复！')) return; state.students = []; state.scores = []; saveStudents(); saveScores(); toast('已清空', 'success'); renderHome(); }
+function clearAll() { if (!confirm('确定要清空所有学生和成绩数据吗？此操作不可恢复！')) return; state.students = []; state.scores = []; state.absences = []; saveStudents(); saveScores(); saveAbsences(); toast('已清空', 'success'); renderHome(); }
 
 // ============================================
 // 50米跑多跑道秒表
@@ -812,6 +867,7 @@ function renderTimerClaimList() {
                     <span style="font-weight:600;">${s.name}</span>
                     <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${s.gender||''}</span>
                     ${saved ? `<span class="badge badge-pass" style="margin-left:6px;font-size:11px;">已认领</span>` : ''}
+                    ${_absenceCell(s.id,'50米跑','timer')}
                 </div>
                 ${saved ? `<span style="font-family:monospace;font-weight:700;color:#059669;font-size:13px;">${saved.value.toFixed(2)}s</span>` : `<button class="btn btn-sm btn-success" style="padding:6px 10px;font-size:13px;" onclick="timerClaimToStudent('${s.id}')" ${!canClaim?'disabled':''}>⏺ 认领</button>`}
             </div>`;
@@ -906,7 +962,8 @@ function timerBackToRun() {
 function timerResetAll() {
     if (!confirm('确定要清空所有计时和50米跑成绩吗？此操作不可恢复！')) return;
     state.scores = state.scores.filter(sc => sc.project !== '50米跑');
-    saveScores();
+    state.absences = state.absences.filter(a => a.project !== '50米跑');
+    saveScores(); saveAbsences();
     state.timerRunning = false;
     if (timerRafId) cancelAnimationFrame(timerRafId);
     state.timerPausedAt = 0;
@@ -981,7 +1038,7 @@ function renderRopeStudents() {
     if (state.students.length === 0) return '<div class="empty">暂无学生，请先导入名单</div>';
     const byClass = {};
     _getFilteredStudents().forEach(s => { const key = `${s.grade||''}${s.class_name||'未分班'}`; (byClass[key] = byClass[key] || []).push(s); });
-    return Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}（${list.length}人）</div>${list.map(s => { const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === '一分钟跳绳'); return `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''}</span></div><input class="score-input-box" type="number" placeholder="次数" value="${sc?.value||''}" onchange="saveScore('${s.id}','一分钟跳绳',this.value,'次'); showLevel('${s.id}','一分钟跳绳',this.value);"><div class="score-level" id="qlevel-${s.id}-一分钟跳绳"></div></div>`; }).join('')}`).join('');
+    return Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}（${list.length}人）</div>${list.map(s => { const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === '一分钟跳绳'); return `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''}</span></div>${_absenceCell(s.id,'一分钟跳绳','rope')}<input class="score-input-box" type="number" placeholder="次数" value="${sc?.value||''}" onchange="saveScore('${s.id}','一分钟跳绳',this.value,'次'); showLevel('${s.id}','一分钟跳绳',this.value);"><div class="score-level" id="qlevel-${s.id}-一分钟跳绳"></div></div>`; }).join('')}`).join('');
 }
 function showLevel(studentId, project, value, suppressDOM) {
     const student = state.students.find(s => s.id === studentId);
@@ -1017,7 +1074,7 @@ function renderSitup() {
                 <button class="count-btn minus" onclick="situpCount(-1)">-1</button>
             </div>
         </div>
-        <div class="card"><div class="h2">快速录入</div>${state.students.length === 0 ? '<div class="empty">请先导入名单</div>' : state.students.map(s => `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''}</span></div><input class="score-input-box" type="number" placeholder="次数" onchange="saveScore('${s.id}','一分钟仰卧起坐',this.value,'次');"></div>`).join('')}</div>
+        <div class="card"><div class="h2">快速录入</div>${state.students.length === 0 ? '<div class="empty">请先导入名单</div>' : state.students.map(s => `<div class="score-input-row"><div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''}</span></div>${_absenceCell(s.id,'一分钟仰卧起坐','situp')}<input class="score-input-box" type="number" placeholder="次数" onchange="saveScore('${s.id}','一分钟仰卧起坐',this.value,'次');"></div>`).join('')}</div>
     </div>`;
 }
 let situpInterval = null, situpCountdown = 60;
@@ -1116,6 +1173,7 @@ function renderClaimStudentList() {
                     <span style="font-weight:600;">${s.name}</span>
                     <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${s.gender||''}</span>
                     ${saved ? `<span class="badge badge-pass" style="margin-left:6px;font-size:11px;">已认领</span>` : ''}
+                    ${_absenceCell(s.id,'耐力跑','endurance')}
                 </div>
                 ${saved ? (() => { const mm = Math.floor(saved.value/60), ss = Math.floor(saved.value%60); return `<span style="font-family:monospace;font-weight:700;color:#059669;font-size:13px;">${mm}'${String(ss).padStart(2,'0')}"</span>`; })() : `<button class="btn btn-sm btn-success" style="padding:6px 10px;font-size:13px;" onclick="claimToStudent('${s.id}')" ${!canClaim?'disabled':''}>⏺ 认领</button>`}
             </div>`;
@@ -1139,7 +1197,8 @@ function enduranceBackToRun() { endurancePhase = 'running'; renderEndurance(); }
 function enduranceResetAll() {
     if (!confirm('确定要清空所有计时和耐力跑成绩吗？此操作不可恢复！')) return;
     state.scores = state.scores.filter(sc => sc.project !== ENDURANCE_PROJECT);
-    saveScores();
+    state.absences = state.absences.filter(a => a.project !== '耐力跑');
+    saveScores(); saveAbsences();
     enduranceRunning = false;
     if (enduranceRafId) cancelAnimationFrame(enduranceRafId);
     endurancePausedAt = 0; enduranceStartTime = null;
@@ -1221,6 +1280,7 @@ function _renderBMI() {
         const scW = state.scores.find(sc => sc.student_id === s.id && sc.project === '体重');
         return `<div class="score-input-row">
             <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
+            ${_absenceCell(s.id,'身高体重','height')}
             <input class="score-input-box" type="number" placeholder="身高cm" value="${scH?.value||''}" onchange="saveScore('${s.id}','身高',this.value,'cm');_renderBMI();" style="width:85px;">
             <input class="score-input-box" type="number" placeholder="体重kg" step="0.1" value="${scW?.value||''}" onchange="saveScore('${s.id}','体重',this.value,'kg');_renderBMI();" style="width:85px;">
             <span class="score-level" id="bmi-${s.id}"></span>
@@ -1253,9 +1313,9 @@ function renderSingleEntry(project, navId, unit) {
         </div>
         <div class="card" id="input-card"></div>
     </div>`;
-    _renderSingle(project, unit);
+    _renderSingle(project, unit, navId);
 }
-function _renderSingle(project, unit) {
+function _renderSingle(project, unit, navId) {
     const el = document.getElementById('input-card');
     if (!el) return;
     if (state.students.length === 0) { el.innerHTML = '<div class="empty">暂无学生，请先导入名单</div>'; return; }
@@ -1268,6 +1328,7 @@ function _renderSingle(project, unit) {
         const onChg = `saveScore('${s.id}','${project}',this.value,'${unit}');${showLevel?'showLevelBadge(\"'+s.id+'\",\"'+project+'\",this.value);':''}`;
         return `<div class="score-input-row">
             <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
+            ${_absenceCell(s.id, project, navId || '')}
             <input class="score-input-box" type="number" step="0.1" placeholder="${unit}" value="${sc?.value||''}" onchange="${onChg}">
             <span class="score-level" id="sl-${s.id}-${project}"></span>
         </div>`;
@@ -1343,29 +1404,193 @@ function importExcel(file) {
 // ============================================
 // 成绩分析
 // ============================================
+// ============================================
+// 训练/饮食建议知识库已独立到 advice-knowledge.js（window.TCB_ADVICE）
+// 校准建议内容时只改那个文件即可
+// ============================================
+const TRAINING_ADVICE = (window.TCB_ADVICE && window.TCB_ADVICE.training) || {};
+const DIET_ADVICE = (window.TCB_ADVICE && window.TCB_ADVICE.diet) || {};
+
+// 分析工具：给单个学生算全部项目等级
+function analyzeStudent(student) {
+    const projects = ['肺活量','50米跑','坐位体前屈','一分钟跳绳','一分钟仰卧起坐','50米×8往返跑','立定跳远','耐力跑','仰卧起坐引体'];
+    const results = [];
+    for (const p of projects) {
+        if (!(GRADE_MAP[student.grade]?.projects || []).some(gp => gp === p || (gp==='BMI'))) {
+            // 年级没这个项目就跳过（耐力跑兼容 50×8）
+            if (!(p === '耐力跑' && (GRADE_MAP[student.grade]?.projects||[]).includes('50米×8往返跑'))) continue;
+        }
+        const sc = state.scores.find(x => x.student_id === student.id && x.project === p);
+        if (!sc) continue;
+        const r = getScore(student.grade, student.gender, p, sc.value);
+        if (r) results.push({ project: p, value: sc.value, level: r.level, score: r.score });
+    }
+    // BMI
+    const hSc = state.scores.find(x => x.student_id === student.id && x.project === '身高');
+    const wSc = state.scores.find(x => x.student_id === student.id && x.project === '体重');
+    let bmi = null;
+    if (hSc && wSc) bmi = calcBMI(student.grade, student.gender, { height: hSc.value, weight: wSc.value });
+    return { results, bmi };
+}
+
 function renderAnalysis() {
-    let levels = { '优秀': 0, '良好': 0, '及格': 0, '不及格': 0 }, totalScores = 0, projectLevels = {};
+    window._analysisClass = window._analysisClass || '全部';
+    const classes = _getAllClasses();
+    // 统计（按班级筛选）
+    const stu = window._analysisClass === '全部' ? state.students : state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === window._analysisClass);
+    const stuIds = new Set(stu.map(s => s.id));
+    let levels = { '优秀': 0, '良好': 0, '及格': 0, '不及格': 0 }, projectStats = {};
     for (let sc of state.scores) {
+        if (!stuIds.has(sc.student_id) || sc.project === '身高' || sc.project === '体重') continue;
         const student = state.students.find(s => s.id === sc.student_id);
-        if (!student || sc.project === '身高' || sc.project === '体重') continue;
+        if (!student) continue;
         const result = getScore(student.grade, student.gender, sc.project, sc.value);
-        if (result) { totalScores++; if (levels[result.level] !== undefined) levels[result.level]++; projectLevels[sc.project] = projectLevels[sc.project] || {}; projectLevels[sc.project][result.level] = (projectLevels[sc.project][result.level] || 0) + 1; }
+        if (result) {
+            levels[result.level] = (levels[result.level]||0) + 1;
+            const ps = projectStats[sc.project] = projectStats[sc.project] || { total: 0, pass: 0, levels: { '优秀':0,'良好':0,'及格':0,'不及格':0 } };
+            ps.total++; ps.levels[result.level] = (ps.levels[result.level]||0)+1;
+            if (result.level !== '不及格') ps.pass++;
+        }
     }
     const total = Object.values(levels).reduce((a,b)=>a+b,0);
+    const passRate = total > 0 ? ((levels['优秀']+levels['良好']+levels['及格'])/total*100) : 0;
+    const excRate = total > 0 ? (levels['优秀']/total*100) : 0;
+
+    // 各项目达标率排序（薄弱在前）
+    const projSorted = Object.entries(projectStats).map(([p, st]) => ({ p, rate: st.total ? st.pass/st.total*100 : 0, ...st })).sort((a,b) => a.rate - b.rate);
+
+    // 班级对比
+    const classCompare = classes.map(cls => {
+        const ids = new Set(state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === cls).map(s => s.id));
+        let t = 0, p = 0;
+        for (let sc of state.scores) {
+            if (!ids.has(sc.student_id) || sc.project === '身高' || sc.project === '体重') continue;
+            const student = state.students.find(s => s.id === sc.student_id);
+            if (!student) continue;
+            const r = getScore(student.grade, student.gender, sc.project, sc.value);
+            if (r) { t++; if (r.level !== '不及格') p++; }
+        }
+        return { cls, rate: t ? p/t*100 : 0, total: t };
+    }).filter(c => c.total > 0).sort((a,b) => b.rate - a.rate);
+
+    // 班级薄弱项 TOP3 → 班级训练建议
+    const weakTop = projSorted.slice(0, 3).filter(x => x.rate < 100);
+
+    // 个人建议列表
+    const stuList = stu.map(s => {
+        const a = analyzeStudent(s);
+        const weak = a.results.filter(r => r.level === '不及格').map(r => r.project);
+        return { s, a, weak };
+    }).filter(x => x.a.results.length > 0 || x.a.bmi);
+
     document.getElementById('app').innerHTML = renderNav('analysis') + `
     <div class="container">
-        <div class="card"><div class="h2">📊 数据概览</div><div class="stat-grid">
-            <div class="stat-card"><div class="stat-value">${state.students.length}</div><div class="stat-label">学生总数</div></div>
-            <div class="stat-card"><div class="stat-value">${new Set(state.scores.map(sc=>sc.student_id)).size}</div><div class="stat-label">已录入成绩</div></div>
-            <div class="stat-card"><div class="stat-value">${total > 0 ? (levels['优秀']/total*100).toFixed(1) : 0}%</div><div class="stat-label">优秀率</div></div>
-            <div class="stat-card"><div class="stat-value">${total > 0 ? ((levels['优秀']+levels['良好']+levels['及格'])/total*100).toFixed(1) : 0}%</div><div class="stat-label">达标率</div></div>
+        <div class="card"><div class="flex-between" style="flex-wrap:wrap;gap:8px;">
+            <div class="h2" style="margin:0;">📊 成绩分析</div>
+            ${classes.length > 1 ? `<select class="input" style="padding:6px 10px;font-size:13px;width:auto;" onchange="window._analysisClass=this.value;renderAnalysis();">
+                <option value="全部" ${window._analysisClass==='全部'?'selected':''}>全部班级</option>
+                ${classes.map(c => `<option value="${c}" ${c===window._analysisClass?'selected':''}>${c}</option>`).join('')}
+            </select>` : ''}
+        </div>
+        <div class="stat-grid" style="margin-top:12px;">
+            <div class="stat-card"><div class="stat-value">${stu.length}</div><div class="stat-label">学生总数</div></div>
+            <div class="stat-card"><div class="stat-value">${stuList.length}</div><div class="stat-label">已有成绩</div></div>
+            <div class="stat-card"><div class="stat-value">${passRate.toFixed(1)}%</div><div class="stat-label">达标率</div></div>
+            <div class="stat-card"><div class="stat-value">${excRate.toFixed(1)}%</div><div class="stat-label">优秀率</div></div>
         </div></div>
-        <div class="card"><div class="h2">🎯 综合等级分布</div><div class="flex" style="gap:12px;flex-wrap:wrap;">
-            <span class="badge badge-excellent">优秀 ${levels['优秀']}</span><span class="badge badge-good">良好 ${levels['良好']}</span>
-            <span class="badge badge-pass">及格 ${levels['及格']}</span><span class="badge badge-fail">不及格 ${levels['不及格']}</span>
-        </div></div>
-        <div class="card"><div class="h2">📈 各项目统计</div>${Object.entries(projectLevels).map(([proj, lvls]) => { const t = Object.values(lvls).reduce((a,b)=>a+b,0); return `<div style="padding:10px 0;border-bottom:1px solid var(--border);"><div style="font-weight:600;">${proj} <span class="text-muted" style="font-size:12px;">(共${t}项)</span></div><div class="flex" style="gap:8px;margin-top:6px;">${Object.entries(lvls).map(([lv, n]) => { const badge = lv==='优秀'?'badge-excellent':lv==='良好'?'badge-good':lv==='及格'?'badge-pass':'badge-fail'; return `<span class="badge ${badge}">${lv} ${n}</span>`; }).join('')}</div></div>`; }).join('') || '<div class="empty">还没有成绩数据</div>'}</div>
+
+        ${total > 0 ? `
+        <div class="card"><div class="h2">🎯 等级分布</div>
+            ${[['优秀','var(--success,#16a34a)','badge-excellent'],['良好','#3b82f6','badge-good'],['及格','#f59e0b','badge-pass'],['不及格','#ef4444','badge-fail']].map(([lv, color]) => {
+                const n = levels[lv]||0; const pct = total ? (n/total*100) : 0;
+                return `<div style="margin:10px 0;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>${lv}</span><span style="color:#64748b;">${n} 人 · ${pct.toFixed(1)}%</span></div>
+                <div style="background:#f1f5f9;height:14px;border-radius:7px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:${color};border-radius:7px;transition:width .4s;"></div></div></div>`;
+            }).join('')}
+        </div>
+
+        <div class="card"><div class="h2">📈 各项目达标率（弱项排前）</div>
+            ${projSorted.map(x => { const color = x.rate >= 80 ? '#16a34a' : x.rate >= 60 ? '#f59e0b' : '#ef4444';
+                return `<div style="margin:10px 0;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>${x.p}</span><span style="color:#64748b;">${x.rate.toFixed(0)}% 达标 (${x.total}人测)</span></div>
+                <div style="background:#f1f5f9;height:14px;border-radius:7px;overflow:hidden;"><div style="width:${x.rate}%;height:100%;background:${color};border-radius:7px;transition:width .4s;"></div></div></div>`; }).join('')}
+        </div>
+
+        ${classCompare.length > 1 ? `<div class="card"><div class="h2">🏫 班级达标率对比</div>
+            ${classCompare.map(c => { const color = c.rate >= 80 ? '#16a34a' : c.rate >= 60 ? '#f59e0b' : '#ef4444';
+                return `<div style="margin:10px 0;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span>${c.cls}</span><span style="color:#64748b;">${c.rate.toFixed(1)}%</span></div>
+                <div style="background:#f1f5f9;height:14px;border-radius:7px;overflow:hidden;"><div style="width:${c.rate}%;height:100%;background:${color};border-radius:7px;"></div></div></div>`; }).join('')}
+        </div>` : ''}
+
+        <div class="card" style="background:#fffbeb;border-color:#fde68a;">
+            <div class="h2">💪 班级训练建议 <span class="text-muted" style="font-size:12px;">依据 NSCA 青少年抗阻训练指南 / ACSM 运动处方原则</span></div>
+            ${weakTop.length === 0 ? '<div class="text-muted">暂无薄弱项，班级整体达标良好，保持现有训练节奏！</div>' : weakTop.map((x, i) => {
+                const adv = TRAINING_ADVICE[x.p];
+                if (!adv) return '';
+                const plan = adv.fail || adv;
+                return `<div style="margin:14px 0;padding:12px;background:white;border-radius:10px;border:1px solid #fde68a;">
+                    <div style="font-weight:700;margin-bottom:4px;">${i+1}. ${x.p}（达标率 ${x.rate.toFixed(0)}%，练：${adv.name}）</div>
+                    ${plan.methods.map(m => `<div style="font-size:13px;color:#475569;margin:4px 0 0 12px;">• ${m}</div>`).join('')}
+                    <div style="font-size:12px;color:#16a34a;margin-top:6px;margin-left:12px;">⏰ ${plan.freq}</div>
+                    ${adv.safety ? `<div style="font-size:12px;color:#dc2626;margin-top:4px;margin-left:12px;">⚠️ ${adv.safety}</div>` : ''}
+                </div>`;
+            }).join('')}
+            ${(() => {
+                const cw = window.TCB_ADVICE && window.TCB_ADVICE.classWeekly;
+                if (!cw) return '';
+                if (typeof cw === 'string') return `<div style="font-size:12px;color:#92400e;margin-top:10px;">${cw}</div>`;
+                return `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #fde68a;">
+                    <div style="font-weight:700;font-size:13px;color:#92400e;margin-bottom:4px;">📅 班级每周训练模板${cw.title ? '（' + cw.title + '）' : ''}</div>
+                    ${(cw.sessions || cw.days || []).map(s => {
+                        if (typeof s[1] === 'string') return `<div style="font-size:13px;color:#78350f;margin:4px 0 0 12px;"><b>${s[0]}</b> ${s[1]}</div>`;
+                        return `<div style="margin:8px 0 0 12px;">
+                            <div style="font-size:13px;font-weight:700;color:#78350f;">${s[0]}</div>
+                            ${s[1].map(line => `<div style="font-size:13px;color:#78350f;margin:2px 0 0 10px;">• ${line}</div>`).join('')}
+                        </div>`;
+                    }).join('')}
+                    ${cw.daily ? `<div style="font-size:13px;color:#78350f;margin:6px 0 0 12px;">📌 每天：${cw.daily}</div>` : ''}
+                    ${cw.examWeek ? `<div style="font-size:13px;color:#78350f;margin:3px 0 0 12px;">🏁 ${cw.examWeek}</div>` : ''}
+                    ${cw.tip ? `<div style="font-size:13px;color:#78350f;margin:3px 0 0 12px;">💡 ${cw.tip}</div>` : ''}
+                </div>`;
+            })()}
+        </div>` : '<div class="card"><div class="empty">还没有成绩数据，先去录入成绩吧</div></div>'}
+
+        <div class="card"><div class="h2">👤 个人诊断报告 <span class="text-muted" style="font-size:12px;">点学生展开训练 + 饮食建议</span></div>
+            ${stuList.length === 0 ? '<div class="empty">暂无成绩数据</div>' : stuList.map(({ s, a, weak }) => {
+                const dietKey = a.bmi ? (a.bmi.level || '正常') : '正常';
+                const diet = DIET_ADVICE[dietKey] || DIET_ADVICE['正常'];
+                const weakProjects = [...new Set(weak)];
+                return `<div style="border:1px solid var(--border);border-radius:10px;margin:8px 0;overflow:hidden;">
+                    <div onclick="toggleStuDetail('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:12px;cursor:pointer;background:#f8fafc;">
+                        <span style="font-weight:600;">${s.name}</span>
+                        <span style="font-size:12px;color:#64748b;">${s.gender||''} · ${s.grade||''}${s.class_name||''}</span>
+                        ${a.bmi ? `<span class="badge ${a.bmi.level==='正常'?'badge-good':a.bmi.level==='低体重'?'badge-pass':a.bmi.level==='超重'?'badge-warning':'badge-fail'}">BMI ${a.bmi.value} ${a.bmi.level}</span>` : ''}
+                        ${weakProjects.length === 0 ? '<span class="badge badge-excellent" style="margin-left:auto;">全达标</span>' : `<span class="badge badge-fail" style="margin-left:auto;">薄弱 ${weakProjects.length} 项</span>`}
+                    </div>
+                    <div id="detail-${s.id}" style="display:none;padding:12px;border-top:1px solid var(--border);">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">📋 各项目成绩</div>
+                        ${a.results.map(r => { const badge = r.level==='优秀'?'badge-excellent':r.level==='良好'?'badge-good':r.level==='及格'?'badge-pass':'badge-fail';
+                            return `<span class="badge ${badge}" style="margin:2px;">${r.project} ${r.level}</span>`; }).join('') || '<div class="text-muted" style="font-size:13px;">暂无测试成绩</div>'}
+                        ${(a.results.some(r => r.level === '不及格' || r.level === '及格')) ? `<div style="font-size:13px;font-weight:600;margin:12px 0 6px;">🏃 针对性训练建议</div>
+                            ${a.results.filter(r => r.level === '不及格' || r.level === '及格').map(r => {
+                                const adv = TRAINING_ADVICE[r.project]; if (!adv) return '';
+                                const isFail = r.level === '不及格';
+                                const plan = isFail ? (adv.fail || adv) : (adv.improve || adv);
+                                return `<div style="margin:8px 0;padding:10px;${isFail ? 'background:#fef2f2;' : 'background:#eff6ff;'}border-radius:8px;">
+                                    <div style="font-weight:600;font-size:13px;">${isFail ? '🚨 补救' : '📈 提升'}：${r.project}（当前${r.level}，练：${adv.name}）</div>
+                                    ${plan.methods.map(m => `<div style="font-size:12px;color:#475569;margin:3px 0 0 10px;">• ${m}</div>`).join('')}
+                                    <div style="font-size:12px;color:${isFail ? '#dc2626' : '#2563eb'};margin-top:4px;margin-left:10px;">⏰ ${plan.freq}</div>
+                                    ${isFail && adv.safety ? `<div style="font-size:12px;color:#dc2626;margin-top:3px;margin-left:10px;">⚠️ ${adv.safety}</div>` : ''}
+                                </div>`; }).join('')}` : '<div style="font-size:13px;color:#16a34a;margin-top:10px;">✅ 全部项目良好及以上，保持当前运动习惯，每周 3 次以上中高强度运动维持体能！</div>'}
+                        <div style="font-size:13px;font-weight:600;margin:12px 0 6px;">${diet.title}</div>
+                        ${diet.items.map(it => `<div style="font-size:12px;color:#475569;margin:4px 0 0 10px;">• ${it}</div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
     </div>`;
+}
+function toggleStuDetail(id) {
+    const el = document.getElementById(`detail-${id}`);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 // ============================================
@@ -1380,6 +1605,15 @@ function renderExport() {
             <div style="font-size:20px;font-weight:700;margin-bottom:8px;">📤 一键导出国网体测网格式</div>
             <div style="font-size:13px;opacity:0.9;margin-bottom:14px;">${state.students.length} 名学生 · 21 列标准格式 · 可直接上传</div>
             <button class="btn btn-block btn-lg" style="background:rgba(255,255,255,0.2);color:white;" onclick="doExport()">📥 下载 Excel 文件</button>
+        </div>
+        <div class="card" style="background:#fef2f2;border-color:#fecaca;">
+            <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+                <div>
+                    <div class="h2" style="margin:0;font-size:15px;">🚫 请假名单（${state.absences.length} 条记录）</div>
+                    <div class="text-muted" style="font-size:12px;margin-top:4px;">各计时/录入页面点"🚫 请假"按钮记录，导出后单独存档</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="exportAbsences()">📥 下载全部请假名单</button>
+            </div>
         </div>
         <div class="card"><div class="h2" style="font-size:14px;">📋 导出预览（前 5 行）</div><div style="overflow-x:auto;font-size:11px;max-height:300px;"><table style="width:100%;border-collapse:collapse;"><tr style="background:#f1f5f9;position:sticky;top:0;">${EXPORT_COLUMNS.map(c => `<th style="padding:4px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap;">${c}</th>`).join('')}</tr>${sorted.slice(0,5).map(s => { const gm = GRADE_MAP[s.grade] || { code: 0 }; const cn = (s.class_name||'').match(/\d+/)?.[0] || '1'; const sc = (p) => { const f = state.scores.find(x => x.student_id===s.id && x.project===p); return f?.value ?? ''; }; return `<tr>${EXPORT_COLUMNS.map(c => { let v=''; if(c==='年级编号')v=gm.code; else if(c==='班级编号')v=`${gm.code}${String(cn).padStart(2,'0')}`; else if(c==='班级名称')v=`${s.grade||''}${s.class_name||''}`; else if(c==='学籍号')v=s.student_id||''; else if(c==='民族代码')v=s.ethnicity||''; else if(c==='姓名')v=s.name||''; else if(c==='性别')v=s.gender||''; else if(c==='身高')v=sc('身高'); else if(c==='体重')v=sc('体重'); else if(c==='肺活量')v=sc('肺活量'); else if(c==='50米跑')v=sc('50米跑'); else if(c==='坐位体前屈')v=sc('坐位体前屈'); else if(c==='一分钟跳绳')v=sc('一分钟跳绳'); else if(c==='一分钟仰卧起坐')v=sc('一分钟仰卧起坐'); else if(c==='50米×8往返跑')v=sc('50米×8往返跑'); else if(c==='立定跳远')v=sc('立定跳远'); else if(c==='800米跑'){ if(s.gender==='女'){ const val=sc('耐力跑'); v=val?formatEndurance(val):''; }} else if(c==='1000米跑'){ if(s.gender==='男'){ const val=sc('耐力跑'); v=val?formatEndurance(val):''; }} else if(c==='引体向上')v=sc('仰卧起坐引体'); return `<td style="padding:2px 4px;border:1px solid #e2e8f0;">${v}</td>`; }).join('')}</tr>`; }).join('')}</table></div></div>
     </div>`;
@@ -1397,8 +1631,10 @@ function doExport() {
         return EXPORT_COLUMNS.map(c => row[c] || '');
     })];
     const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = EXPORT_COLUMNS.map(c => ({ wch: 14 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '体测成绩');
     const now = new Date();
-    XLSX.writeFile(XLSX.utils.book_new(), `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`);
+    XLSX.writeFile(wb, `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`);
     toast('导出成功！', 'success');
 }
 
@@ -1854,6 +2090,7 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
         try {
             await SB.syncStudents(state.students);
             const syncResult = await SB.syncScores(state.scores);
+            await SB.syncAbsences(state.absences);
             if (syncResult.status === 'synced') {
                 toast(`☁️ 已从云端拉取 ${syncResult.count} 条数据`, 'success');
             }

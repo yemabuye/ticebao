@@ -1,10 +1,11 @@
 // Service Worker - 体测宝离线缓存
-const CACHE = 'tiance-bao-v2';
+const CACHE = 'tiance-bao-v3';
 const ASSETS = [
     './',
     './index.html',
     './app.js',
     './scoring_tables.js',
+    './advice-knowledge.js',
     './manifest.json'
 ];
 
