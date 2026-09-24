@@ -1615,10 +1615,44 @@ function renderExport() {
                 <button class="btn btn-sm btn-primary" onclick="exportAbsences()">📥 下载全部请假名单</button>
             </div>
         </div>
-        <div class="card"><div class="h2" style="font-size:14px;">📋 导出预览（前 5 行）</div><div style="overflow-x:auto;font-size:11px;max-height:300px;"><table style="width:100%;border-collapse:collapse;"><tr style="background:#f1f5f9;position:sticky;top:0;">${EXPORT_COLUMNS.map(c => `<th style="padding:4px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap;">${c}</th>`).join('')}</tr>${sorted.slice(0,5).map(s => { const gm = GRADE_MAP[s.grade] || { code: 0 }; const cn = (s.class_name||'').match(/\d+/)?.[0] || '1'; const sc = (p) => { const f = state.scores.find(x => x.student_id===s.id && x.project===p); return f?.value ?? ''; }; return `<tr>${EXPORT_COLUMNS.map(c => { let v=''; if(c==='年级编号')v=gm.code; else if(c==='班级编号')v=`${gm.code}${String(cn).padStart(2,'0')}`; else if(c==='班级名称')v=`${s.grade||''}${s.class_name||''}`; else if(c==='学籍号')v=s.student_id||''; else if(c==='民族代码')v=s.ethnicity||''; else if(c==='姓名')v=s.name||''; else if(c==='性别')v=s.gender||''; else if(c==='身高')v=sc('身高'); else if(c==='体重')v=sc('体重'); else if(c==='肺活量')v=sc('肺活量'); else if(c==='50米跑')v=sc('50米跑'); else if(c==='坐位体前屈')v=sc('坐位体前屈'); else if(c==='一分钟跳绳')v=sc('一分钟跳绳'); else if(c==='一分钟仰卧起坐')v=sc('一分钟仰卧起坐'); else if(c==='50米×8往返跑')v=sc('50米×8往返跑'); else if(c==='立定跳远')v=sc('立定跳远'); else if(c==='800米跑'){ if(s.gender==='女'){ const val=sc('耐力跑'); v=val?formatEndurance(val):''; }} else if(c==='1000米跑'){ if(s.gender==='男'){ const val=sc('耐力跑'); v=val?formatEndurance(val):''; }} else if(c==='引体向上')v=sc('仰卧起坐引体'); return `<td style="padding:2px 4px;border:1px solid #e2e8f0;">${v}</td>`; }).join('')}</tr>`; }).join('')}</table></div></div>
+        <div class="card"><div class="h2" style="font-size:14px;">📋 导出预览（前 5 行）</div><div style="overflow-x:auto;font-size:11px;max-height:300px;"><table style="width:100%;border-collapse:collapse;"><tr style="background:#f1f5f9;position:sticky;top:0;">${EXPORT_COLUMNS.map(c => `<th style="padding:4px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap;">${c}</th>`).join('')}</tr>${sorted.slice(0,5).map(s => { const gm = GRADE_MAP[s.grade] || { code: 0 }; const cn = (s.class_name||'').match(/\d+/)?.[0] || '1'; const rowVals = { '年级编号':gm.code,'班级编号':`${gm.code}${String(cn).padStart(2,'0')}`,'班级名称':`${s.grade||''}${s.class_name||''}`,'学籍号':s.student_id||'','民族代码':s.ethnicity||'','姓名':s.name||'','性别':s.gender||'','出生日期':'','家庭住址':'','身高':_exportVal(s,'身高'),'体重':_exportVal(s,'体重'),'肺活量':_exportVal(s,'肺活量'),'50米跑':_exportVal(s,'50米跑'),'坐位体前屈':_exportVal(s,'坐位体前屈'),'一分钟跳绳':_exportVal(s,'一分钟跳绳'),'一分钟仰卧起坐':_exportVal(s,'一分钟仰卧起坐'),'50米×8往返跑':_exportVal(s,'50米×8往返跑'),'立定跳远':_exportVal(s,'立定跳远'),'800米跑':_exportVal(s,'800米跑'),'1000米跑':_exportVal(s,'1000米跑'),'引体向上':_exportVal(s,'引体向上')}; return `<tr>${EXPORT_COLUMNS.map(c => { const v = rowVals[c] || ''; const color = v === '请假' ? '#dc2626' : ''; return `<td style="padding:2px 4px;border:1px solid #e2e8f0;${color ? 'color:'+color+';font-weight:600;' : ''}">${v}</td>`; }).join('')}</tr>`; }).join('')}</table></div></div>
     </div>`;
 }
 function formatEndurance(value) { const seconds = parseFloat(value); if (isNaN(seconds)) return ''; const mm = Math.floor(seconds/60), ss = Math.floor(seconds%60); return `${mm}'${String(ss).padStart(2,'0')}"`; }
+
+// 统一取值：有成绩返回成绩，无成绩但请假返回"请假"，都没有返回空
+// 请假映射："身高体重" → 身高/体重都算请假；"耐力跑" → 对应 800/1000 列
+function _exportVal(student, exportCol) {
+    // 先查成绩
+    let scoreKey = exportCol;
+    let val = '';
+    if (exportCol === '800米跑') {
+        if (student.gender !== '女') return '';
+        scoreKey = '耐力跑';
+        const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
+        if (f) return formatEndurance(f.value);
+    } else if (exportCol === '1000米跑') {
+        if (student.gender !== '男') return '';
+        scoreKey = '耐力跑';
+        const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
+        if (f) return formatEndurance(f.value);
+    } else if (exportCol === '引体向上') {
+        scoreKey = '仰卧起坐引体';
+        const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
+        if (f) return f.value ?? '';
+    } else {
+        const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
+        if (f) return f.value ?? '';
+    }
+    // 成绩没有 → 查请假
+    const absenceKeys = [scoreKey];
+    if (exportCol === '身高' || exportCol === '体重') absenceKeys.push('身高体重');
+    for (const k of absenceKeys) {
+        if (state.absences.find(a => a.student_id === student.id && a.project === k)) return '请假';
+    }
+    return '';
+}
+
 function doExport() {
     if (state.students.length === 0) return toast('没有学生数据', 'error');
     const gradeOrder = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'];
@@ -1626,8 +1660,29 @@ function doExport() {
     const aoa = [EXPORT_COLUMNS, ...sorted.map(s => {
         const gm = GRADE_MAP[s.grade] || { code: 0 };
         const cn = (s.class_name||'').match(/\d+/)?.[0] || '1';
-        const sc = (p) => { const f = state.scores.find(x => x.student_id===s.id && x.project===p); return f?.value ?? ''; };
-        const row = { '年级编号': gm.code, '班级编号': `${gm.code}${String(cn).padStart(2,'0')}`, '班级名称': `${s.grade||''}${s.class_name||''}`, '学籍号': s.student_id || '', '民族代码': s.ethnicity || '', '姓名': s.name || '', '性别': s.gender || '', '出生日期': '', '家庭住址': '', '身高': sc('身高'), '体重': sc('体重'), '肺活量': sc('肺活量'), '50米跑': sc('50米跑'), '坐位体前屈': sc('坐位体前屈'), '一分钟跳绳': sc('一分钟跳绳'), '一分钟仰卧起坐': sc('一分钟仰卧起坐'), '50米×8往返跑': sc('50米×8往返跑'), '立定跳远': sc('立定跳远'), '800米跑': s.gender==='女' && sc('耐力跑') ? formatEndurance(sc('耐力跑')) : '', '1000米跑': s.gender==='男' && sc('耐力跑') ? formatEndurance(sc('耐力跑')) : '', '引体向上': sc('仰卧起坐引体') };
+        const row = {
+            '年级编号': gm.code,
+            '班级编号': `${gm.code}${String(cn).padStart(2,'0')}`,
+            '班级名称': `${s.grade||''}${s.class_name||''}`,
+            '学籍号': s.student_id || '',
+            '民族代码': s.ethnicity || '',
+            '姓名': s.name || '',
+            '性别': s.gender || '',
+            '出生日期': '',
+            '家庭住址': '',
+            '身高': _exportVal(s, '身高'),
+            '体重': _exportVal(s, '体重'),
+            '肺活量': _exportVal(s, '肺活量'),
+            '50米跑': _exportVal(s, '50米跑'),
+            '坐位体前屈': _exportVal(s, '坐位体前屈'),
+            '一分钟跳绳': _exportVal(s, '一分钟跳绳'),
+            '一分钟仰卧起坐': _exportVal(s, '一分钟仰卧起坐'),
+            '50米×8往返跑': _exportVal(s, '50米×8往返跑'),
+            '立定跳远': _exportVal(s, '立定跳远'),
+            '800米跑': _exportVal(s, '800米跑'),
+            '1000米跑': _exportVal(s, '1000米跑'),
+            '引体向上': _exportVal(s, '引体向上'),
+        };
         return EXPORT_COLUMNS.map(c => row[c] || '');
     })];
     const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = EXPORT_COLUMNS.map(c => ({ wch: 14 }));
