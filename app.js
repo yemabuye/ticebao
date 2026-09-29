@@ -732,24 +732,39 @@ function renderAnnouncement() {
     const custom = LS.get('tb_announcement', '');
     if (custom) {
         return `
-        <div class="announcement-bar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#dbeafe;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.7;">
+        <div class="announcement-bar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#dbeafe;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.8;">
             <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">📢 公告</div>
-            ${custom.replace(/\n/g, '<br>')}
+            ${formatAnnouncementText(custom)}
         </div>`;
     }
     const signupTip = state.authed && state.userPlan === 'TRIAL'
         ? `⏱ 免费使用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>（剩余 ${trialDaysLeft()} 天）`
         : `✅ 注册即享免费试用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>`;
     const expiredTip = state.userPlan === 'EXPIRED'
-        ? `<span style="color:#b91c1c;">⏰ 您的试用已结束，请购买永久版解锁全部功能</span><br>`
+        ? `<span style="color:#fecaca;">⏰ 您的试用已结束，请购买永久版解锁全部功能</span><br>`
         : '';
     return `
-    <div class="announcement-bar" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#7c2d12;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.7;">
+    <div class="announcement-bar" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#7c2d12;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.8;">
         <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">📢 公告</div>
         ${expiredTip}
         ${signupTip}<br>
         💰 <b>购买永久版 / 技术支持</b>，请添加微信：<b style="font-size:15px;background:#7c2d12;color:#fef3c7;padding:2px 10px;border-radius:4px;display:inline-block;margin-top:2px;">pp33721</b>
     </div>`;
+}
+
+// 公告文本格式化：支持简单标记 + 自动美化
+function formatAnnouncementText(text) {
+    let html = text.replace(/\n/g, '<br>');
+    // **文字** → 加粗
+    html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    // 自动识别微信号/pin码 → 胶囊高亮
+    html = html.replace(/(pp\d+|\bwx[a-zA-Z0-9_]{4,}|微信[:：]\s*[a-zA-Z0-9_\u4e00-\u9fa5]{2,})/g, 
+        '<b style="background:#1e3a8a;color:#93c5fd;padding:1px 8px;border-radius:4px;">$1</b>');
+    // 自动识别金额 → 胶囊
+    html = html.replace(/(\d+)\s*元/g, 
+        '<b style="background:#1e3a8a;color:#fde68a;padding:1px 8px;border-radius:4px;">$1元</b>');
+    // emoji 保持原样，自动加间距
+    return html;
 }
 
 // 手动触发云端同步
