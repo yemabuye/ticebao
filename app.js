@@ -1472,33 +1472,65 @@ function importFromText(text) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
     let count = 0;
     for (let line of lines) {
-        // 跳过表头行
-        if (/姓名|班级|序号|学号/i.test(line)) continue;
-        // 拆分：支持空格、逗号、顿号、tab 分隔
-        const parts = line.split(/[\s,，、\t]+/).filter(Boolean);
-        if (parts.length < 2) continue;
+        // 跳过表头/纯数字/太短的
+        if (/姓名|班级|序号|学号|编号|No/i.test(line)) continue;
+        if (/^\d+$/.test(line)) continue;
+        if (line.length < 2) continue;
         
-        // 智能识别：找性别、年级、班级
-        let name = '', gender = '', grade = '', class_name = '';
-        for (const p of parts) {
-            if (!name && !/^(男|女|性别|序号|[0-9]+)$/.test(p) && p.length <= 6 && /[\u4e00-\u9fa5]/.test(p)) {
-                name = p;
-            } else if (!gender && /^(男|女)$/.test(p)) {
-                gender = p;
-            } else if (!grade && /^[一二三四五六七八九十]+年级$/.test(p)) {
-                grade = p;
-            } else if (!grade && /^(小学|初中|高中)$/.test(p)) {
-                grade = p;
-            } else if (!class_name && /^[0-9一二三四五六七八九十]+班?$/.test(p)) {
-                class_name = p.replace('班', '') + '班';
+        // 先尝试整体匹配年级+班级
+        let grade = '', class_name = '';
+        const gradeMatch = line.match(/([一二三四五六七八九十]{1,3}年级|小学|初中|高中|初一|初二|初三|高一|高二|高三|六年级|五年级|四年级|三年级|二年级|一年级)/);
+        if (gradeMatch) grade = gradeMatch[1];
+        const classMatch = line.match(/(\d{1,2}[-\s]?\(?\d*\)?班|[\d一二三四五六七八九十]+班)/);
+        if (classMatch) class_name = classMatch[1].trim();
+        
+        // 拆分词：支持空格、逗号、顿号、tab、括号、引号
+        let parts = line.split(/[\s,，、\t()（）"'']+/).filter(Boolean);
+        
+        // 提取性别
+        let gender = '';
+        const gIdx = parts.findIndex(p => /^(男|女|性别)$/.test(p));
+        if (gIdx >= 0) { gender = parts[gIdx] === '性别' ? '' : parts[gIdx]; parts.splice(gIdx, 1); }
+        
+        // 提取年级/班级（如果还没从整体匹配到）
+        if (!grade) {
+            const gIdx2 = parts.findIndex(p => /年级|小学|初中|高中|初一|初二|初三|高一|高二|高三/.test(p));
+            if (gIdx2 >= 0) { grade = parts[gIdx2]; parts.splice(gIdx2, 1); }
+        } else {
+            const gIdx2 = parts.findIndex(p => p === grade);
+            if (gIdx2 >= 0) parts.splice(gIdx2, 1);
+        }
+        if (!class_name) {
+            const cIdx = parts.findIndex(p => /班$/.test(p));
+            if (cIdx >= 0) { class_name = parts[cIdx]; parts.splice(cIdx, 1); }
+        } else {
+            const cIdx = parts.findIndex(p => p.includes(class_name.replace(/班$/, '')));
+            if (cIdx >= 0) parts.splice(cIdx, 1);
+        }
+        
+        // 剩下的 parts 里找名字（中文，2-4字，最长的那个）
+        let name = '';
+        const nameCandidates = parts.filter(p => /^[\u4e00-\u9fa5]{2,4}$/.test(p) && !/^(男|女)$/.test(p));
+        if (nameCandidates.length > 0) {
+            // 选最可能的名字：中文、2-4字、不是数字开头
+            name = nameCandidates.find(p => !/^\d/.test(p)) || nameCandidates[0];
+        }
+        // 如果还是没找到，直接取第一个2-6字的中文片段
+        if (!name) {
+            const m = line.match(/[\u4e00-\u9fa5]{2,6}/g);
+            if (m && m.length > 0) {
+                // 排除年级班级那几个
+                name = m.find(x => x !== grade && x !== class_name?.replace('班', '')) || m[0];
             }
         }
-        // 如果没识别到年级/班级，用全局默认
+        
         if (!name) continue;
-        // 没性别就从名字推断（简单启发式）
+        
+        // 没性别就留空，让老师后面补
         if (!gender) gender = '';
         if (!grade) grade = state.students[0]?.grade || '';
         if (!class_name) class_name = state.students[0]?.class_name || '';
+        
         addStudent({ name, gender, grade, class_name });
         count++;
     }
