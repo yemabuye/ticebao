@@ -727,6 +727,15 @@ function renderNav(active) {
 // 公告栏
 // ============================================
 function renderAnnouncement() {
+    // 管理员自定义公告（存 localStorage，留空则用默认）
+    const custom = LS.get('tb_announcement', '');
+    if (custom) {
+        return `
+        <div class="announcement-bar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#dbeafe;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.7;">
+            <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">📢 公告</div>
+            ${custom.replace(/\n/g, '<br>')}
+        </div>`;
+    }
     const signupTip = state.authed && state.userPlan === 'TRIAL'
         ? `⏱ 免费使用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>（剩余 ${trialDaysLeft()} 天）`
         : `✅ 注册即享免费试用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>`;
@@ -2046,6 +2055,14 @@ function renderAdmin() {
         </div>
 
         <div class="card">
+            <div class="h2" style="font-size:14px;margin-bottom:12px;">📢 修改公告</div>
+            <textarea id="admin-announcement" style="width:100%;min-height:100px;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:13px;resize:vertical;">${LS.get('tb_announcement', '') || ''}</textarea>
+            <div style="font-size:11px;color:#888;margin-top:4px;">留空则恢复默认公告。支持纯文本，自动换行。</div>
+            <button class="btn btn-primary" style="margin-top:8px;" onclick="saveAnnouncement()">💾 保存公告</button>
+            <div id="announcement-preview" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="card">
             <div class="h2" style="font-size:14px;margin-bottom:12px;">🔑 修改管理员密码</div>
             <div class="form-group" style="margin-bottom:8px;">
                 <label class="label">当前密码</label>
@@ -2092,6 +2109,17 @@ async function adminLogin() {
     } else {
         toast(r.message || '密码错误', 'error');
     }
+}
+
+// 公告管理
+function saveAnnouncement() {
+    const text = document.getElementById('admin-announcement').value.trim();
+    LS.set('tb_announcement', text);
+    toast(text ? '✅ 公告已保存' : '✅ 已恢复默认公告', 'success');
+    // 预览
+    document.getElementById('announcement-preview').innerHTML = 
+        '<div style="font-size:11px;color:#888;margin-bottom:4px;">预览：</div>' + 
+        renderAnnouncement();
 }
 
 function adminLogout() {
