@@ -610,6 +610,9 @@ async function doSignIn() {
         state.userPlan = finalAuth.plan;
         state.planExpires = finalAuth.expires;
         
+        // 持久化登录状态（关键：微信内置浏览器关掉也能记住）
+        LS.set('tb_auth', { email: finalAuth.email, plan: finalAuth.plan, expires: finalAuth.expires });
+        
         // 重新判断是否到期
         if (finalAuth.plan === 'PERMANENT') {
             // 永不到期
