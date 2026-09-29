@@ -728,15 +728,37 @@ function renderNav(active) {
 // 公告栏
 // ============================================
 function renderAnnouncement() {
+    // 系统动态信息（自动显示，不管自定义还是默认）
+    const trialInfo = state.authed && state.userPlan === 'TRIAL'
+        ? `<span style="opacity:0.9;">⏱ 免费至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>（剩 ${trialDaysLeft()} 天）</span>`
+        : '';
+    const expiredInfo = state.userPlan === 'EXPIRED'
+        ? `<span style="color:#fecaca;">⏰ 试用已结束，请购买永久版解锁全部功能</span>`
+        : '';
+    
     // 管理员自定义公告（存 localStorage，留空则用默认）
     const custom = LS.get('tb_announcement', '');
     if (custom) {
+        // 自定义公告支持占位符：{{剩余天数}} {{到期日期}} {{当前状态}}
+        let html = custom
+            .replace(/\{\{剩余天数\}\}/g, trialDaysLeft())
+            .replace(/\{\{到期日期\}\}/g, TRIAL_END.toLocaleDateString('zh-CN'))
+            .replace(/\{\{当前状态\}\}/g, state.userPlan === 'PERMANENT' ? '永久版' : (state.userPlan === 'EXPIRED' ? '试用已结束' : '免费试用'));
+        html = formatAnnouncementText(html);
+        
+        // 自动追加系统信息行（如果公告里没写的话）
+        const systemLine = (trialInfo || expiredInfo) && !custom.includes('{{剩余天数}}') && !custom.includes('到期') 
+            ? `<br><span style="opacity:0.75;font-size:12px;">${trialInfo || expiredInfo}</span>`
+            : '';
+        
         return `
         <div class="announcement-bar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#dbeafe;padding:14px 18px;border-radius:10px;font-size:13px;line-height:1.8;">
             <div style="font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px;">📢 公告</div>
-            ${formatAnnouncementText(custom)}
+            ${html}${systemLine}
         </div>`;
     }
+    
+    // 默认公告
     const signupTip = state.authed && state.userPlan === 'TRIAL'
         ? `⏱ 免费使用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>（剩余 ${trialDaysLeft()} 天）`
         : `✅ 注册即享免费试用至 <b>${TRIAL_END.toLocaleDateString('zh-CN')}</b>`;
