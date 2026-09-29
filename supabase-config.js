@@ -145,7 +145,7 @@ async function cloudSyncStudents(localStudents) {
             if (error) console.warn('[Supabase] 学生推送失败:', error.message);
         }
 
-        return { status: 'synced', count: merged.length };
+        return { status: 'synced', count: merged.length, data: merged };
     } catch (err) {
         console.warn('[Supabase] 学生同步失败:', err.message);
         return { status: 'error', message: err.message };
@@ -201,7 +201,7 @@ async function cloudSyncScores(localScores) {
             if (error) console.warn('[Supabase] 成绩推送失败:', error.message);
         }
 
-        return { status: 'synced', count: merged.length };
+        return { status: 'synced', count: merged.length, data: merged };
     } catch (err) {
         console.warn('[Supabase] 成绩同步失败:', err.message);
         return { status: 'error', message: err.message };
@@ -246,7 +246,7 @@ async function cloudSyncAbsences(localAbsences) {
             if (error) console.warn('[Supabase] 请假推送失败:', error.message);
         }
 
-        return { status: 'synced', count: localAbsences.length };
+        return { status: 'synced', count: localAbsences.length, data: localAbsences };
     } catch (err) {
         console.warn('[Supabase] 请假同步失败（如果没建 absences 表可忽略）:', err.message);
         return { status: 'offline', count: 0 };
