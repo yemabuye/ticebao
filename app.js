@@ -563,27 +563,47 @@ async function doSignIn() {
     
     toast('⏳ 登录中...', 'info');
     try {
-        let found = false, finalAuth = null;
+        let found = false, finalAuth = null, cloudError = null;
         
-        // Supabase Auth
-        if (window.SB && SB.ready() && window.supabase) {
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-            if (!error && data.user) {
-                found = true;
-                finalAuth = { email: data.user.email, plan: 'TRIAL', expires: null };
-            }
+        // 确保 Supabase client 已初始化
+        if (window.SB && !SB.ready()) {
+            await SB.init();
         }
         
-        // 本地降级
+        // Supabase Auth（只要 client 存在就尝试，不管 RPC 是否通过）
+        if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (!error && data.user) {
+                    found = true;
+                    finalAuth = { email: data.user.email, plan: 'TRIAL', expires: null };
+                } else if (error) {
+                    cloudError = error.message;
+                }
+            } catch (e) {
+                cloudError = e.message;
+            }
+        } else {
+            cloudError = '云端未连接';
+        }
+        
+        // 本地降级（只在云端失败时走，且不校验密码，因为本地存的密码可能不准）
         if (!found) {
             const auth = LS.get('tb_auth', null);
             if (auth && auth.email === email) {
                 finalAuth = auth;
                 found = true;
+                toast('⚠️ 云端未连接，使用本地缓存登录', 'info');
             }
         }
         
-        if (!found) return toast('邮箱或密码错误', 'error');
+        if (!found) {
+            // 错误提示区分两种情况
+            if (cloudError) {
+                return toast('登录失败: ' + cloudError, 'error');
+            }
+            return toast('邮箱或密码错误', 'error');
+        }
         
         state.authed = true;
         state.userEmail = finalAuth.email;
@@ -613,14 +633,22 @@ async function forgotPassword() {
     
     toast('⏳ 发送中...', 'info');
     try {
-        if (!window.supabase) throw new Error('云端未连接');
+        // 确保 Supabase client 已初始化（就算之前离线也再试一次）
+        if (!window.SB || !SB.ready()) {
+            await SB.init();
+        }
+        // 直接用 supabase 全局变量（supabase-config.js 里的 client）
+        // 如果还是没连上，报明确的错
+        if (typeof supabase === 'undefined' || supabase === null || !supabase.auth) {
+            throw new Error('云端连接失败，请检查网络或稍后再试');
+        }
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
             redirectTo: window.location.origin
         });
         if (error) throw error;
         toast('✅ 重置密码邮件已发送，请查收', 'success');
     } catch (e) {
-        toast('发送失败: ' + e.message, 'error');
+        toast('发送失败: ' + (e.message || '请检查网络'), 'error');
     }
 }
 

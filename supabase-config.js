@@ -46,13 +46,17 @@ async function initSupabase() {
                 autoRefreshToken: true  // ✅ 自动刷新 token，过期前悄悄换新的
             }
         });
-        // 测试连通性
-        await supabase.rpc('validate_activation_code', { input_code: 'TCB-TRIAL-20260921-78A8D2' });
+        // 测试连通性（自定义 RPC 失败不影响 auth API 可用）
+        try {
+            await supabase.rpc('validate_activation_code', { input_code: 'TCB-TRIAL-20260921-78A8D2' });
+        } catch (rpcErr) {
+            console.warn('[Supabase] RPC 测试跳过（不影响登录/忘记密码）:', rpcErr.message);
+        }
         supabaseReady = true;
         console.log('[Supabase] ✅ 连接成功，启用云端同步');
         return true;
     } catch (err) {
-        console.warn('[Supabase] ❌ 连接失败，回退纯 LocalStorage:', err.message);
+        console.warn('[Supabase] ❌ client 创建失败:', err.message);
         supabaseReady = false;
         supabase = null;
         return false;
