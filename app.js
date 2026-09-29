@@ -713,6 +713,7 @@ function renderNav(active) {
             <div class="flex" style="gap:8px;">
                 ${renderPlanBadge()}
                 ${cloudOnline ? `<button class="btn btn-sm btn-ghost" onclick="manualSync()">☁️ 同步</button>` : ''}
+                ${state.userPlan !== 'PERMANENT' ? `<button class="btn btn-sm" style="background:#fbbf24;color:#7c2d12;" onclick="addUpgradeModal()" title="输入激活码升级">🔑 激活</button>` : ''}
                 <button class="btn btn-sm btn-ghost" onclick="doSignOut()" title="退出登录">👤</button>
                 <button class="btn btn-sm btn-ghost" onclick="navigate('admin')" title="管理员后台">⚙️</button>
             </div>
