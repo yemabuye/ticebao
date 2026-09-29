@@ -1409,11 +1409,23 @@ function renderStudents() {
                 <div class="h2" style="margin:0;">👥 学生名单 (${state.students.length})</div>
                 <div class="flex" style="gap:8px;">
                     <button class="btn btn-sm btn-ghost" onclick="downloadTemplate()">📥 模板</button>
+                    <button class="btn btn-sm btn-ghost" onclick="document.getElementById('pasteModal').style.display='flex'">📋 粘贴</button>
                     <label class="btn btn-sm btn-primary" style="cursor:pointer;">📂 导入<input type="file" accept=".xlsx,.xls" onchange="importExcel(this.files[0])" style="display:none;"></label>
                 </div>
             </div>
         </div>
         <div id="students-list"></div>
+        <div id="pasteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+            <div style="background:#fff;border-radius:12px;padding:20px;width:100%;max-width:480px;max-height:80vh;overflow:auto;">
+                <div style="font-size:16px;font-weight:600;margin-bottom:8px;">📋 粘贴微信名单文本</div>
+                <div style="font-size:12px;color:#888;margin-bottom:8px;">从微信群复制名单，每行一个学生。支持格式：<br>张三 男 六年级 1班<br>张三，男，六年级1班<br>张三 男 四年级</div>
+                <textarea id="pasteText" placeholder="张三 男 六年级 1班&#10;李四 女 六年级 1班&#10;王五 男 六年级 2班" style="width:100%;min-height:180px;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:14px;box-sizing:resize;"></textarea>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById('pasteModal').style.display='none'">取消</button>
+                    <button class="btn btn-primary" style="flex:2;" onclick="importFromText(document.getElementById('pasteText').value)">解析导入</button>
+                </div>
+            </div>
+        </div>
     </div>`;
     const el = document.getElementById('students-list');
     if (state.students.length === 0) { el.innerHTML = '<div class="card empty">📋 还没有学生名单<br><span style="font-size:12px;">点"模板"下载，填好后点"导入"</span></div>'; return; }
@@ -1449,6 +1461,48 @@ function importExcel(file) {
         } catch (err) { toast('导入失败：' + err.message, 'error'); }
     };
     reader.readAsArrayBuffer(file);
+}
+
+// 粘贴文本导入（微信群名单快速录入）
+function importFromText(text) {
+    if (!text || !text.trim()) return toast('请先粘贴名单', 'error');
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+    let count = 0;
+    for (let line of lines) {
+        // 跳过表头行
+        if (/姓名|班级|序号|学号/i.test(line)) continue;
+        // 拆分：支持空格、逗号、顿号、tab 分隔
+        const parts = line.split(/[\s,，、\t]+/).filter(Boolean);
+        if (parts.length < 2) continue;
+        
+        // 智能识别：找性别、年级、班级
+        let name = '', gender = '', grade = '', class_name = '';
+        for (const p of parts) {
+            if (!name && !/^(男|女|性别|序号|[0-9]+)$/.test(p) && p.length <= 6 && /[\u4e00-\u9fa5]/.test(p)) {
+                name = p;
+            } else if (!gender && /^(男|女)$/.test(p)) {
+                gender = p;
+            } else if (!grade && /^[一二三四五六七八九十]+年级$/.test(p)) {
+                grade = p;
+            } else if (!grade && /^(小学|初中|高中)$/.test(p)) {
+                grade = p;
+            } else if (!class_name && /^[0-9一二三四五六七八九十]+班?$/.test(p)) {
+                class_name = p.replace('班', '') + '班';
+            }
+        }
+        // 如果没识别到年级/班级，用全局默认
+        if (!name) continue;
+        // 没性别就从名字推断（简单启发式）
+        if (!gender) gender = '';
+        if (!grade) grade = state.students[0]?.grade || '';
+        if (!class_name) class_name = state.students[0]?.class_name || '';
+        addStudent({ name, gender, grade, class_name });
+        count++;
+    }
+    if (count === 0) return toast('没识别到有效学生，请检查格式', 'error');
+    toast(`成功粘贴导入 ${count} 名学生！`, 'success');
+    document.getElementById('pasteModal').style.display = 'none';
+    renderStudents();
 }
 
 // ============================================
