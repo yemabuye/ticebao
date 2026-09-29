@@ -743,10 +743,14 @@ function renderAnnouncement() {
 async function manualSync() {
     if (!window.SB || !SB.ready()) return toast('当前离线，无法同步', 'error');
     toast('⏳ 正在同步到云端...', 'info');
-    const studentResult = await SB.syncStudents(state.students);
-    const scoreResult = await SB.syncScores(state.scores);
-    const absResult = await SB.syncAbsences(state.absences);
-    const total = (studentResult.count || 0) + (scoreResult.count || 0) + (absResult.count || 0);
+    const sRes = await SB.syncStudents(state.students);
+    const scRes = await SB.syncScores(state.scores);
+    const aRes = await SB.syncAbsences(state.absences);
+    // 用 merge 结果回写 state + 持久化
+    if (sRes.data) { state.students = sRes.data; saveStudents(); }
+    if (scRes.data) { state.scores = scRes.data; saveScores(); }
+    if (aRes.data) { state.absences = aRes.data; saveAbsences(); }
+    const total = (sRes.data?.length||0) + (scRes.data?.length||0) + (aRes.data?.length||0);
     toast(`☁️ 同步完成！共 ${total} 条数据`, 'success');
     renderNav(document.querySelector('.nav-item.active')?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1] || 'home');
 }
@@ -2284,12 +2288,15 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
     // 自动拉云端数据
     if (window.SB && SB.ready()) {
         try {
-            await SB.syncStudents(state.students);
-            const syncResult = await SB.syncScores(state.scores);
-            await SB.syncAbsences(state.absences);
-            if (syncResult.status === 'synced') {
-                toast(`☁️ 已从云端拉取 ${syncResult.count} 条数据`, 'success');
-            }
+            const sRes = await SB.syncStudents(state.students);
+            const scRes = await SB.syncScores(state.scores);
+            const aRes = await SB.syncAbsences(state.absences);
+            // 用 merge 结果回写 state + 持久化（确保云端新增的数据不丢）
+            if (sRes.data) { state.students = sRes.data; saveStudents(); }
+            if (scRes.data) { state.scores = scRes.data; saveScores(); }
+            if (aRes.data) { state.absences = aRes.data; saveAbsences(); }
+            const total = (sRes.data?.length||0) + (scRes.data?.length||0) + (aRes.data?.length||0);
+            if (total > 0) toast(`☁️ 已同步 ${total} 条数据`, 'success');
         } catch(e) { console.warn('自动同步跳过:', e.message); }
     }
     
