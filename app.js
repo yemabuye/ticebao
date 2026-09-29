@@ -125,7 +125,7 @@ function exportAbsences(project) {
     XLSX.utils.book_append_sheet(wb, ws, '请假名单');
     const now = new Date();
     const tag = project ? `_${project}` : '';
-    XLSX.writeFile(wb, `体测宝_请假名单${tag}_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xlsx`);
+    XLSX.writeFile(wb, `体测宝_请假名单${tag}_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.xls`, { bookType: 'biff8' });
     toast('请假名单导出成功！', 'success');
 }
 
@@ -1380,7 +1380,7 @@ function downloadTemplate() {
     ws['!cols'] = [{wch:10},{wch:6},{wch:10},{wch:6},{wch:15},{wch:6}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '学生名单');
-    XLSX.writeFile(wb, '体测宝_导入模板.xlsx');
+    XLSX.writeFile(wb, '体测宝_导入模板.xls', { bookType: 'biff8' });
     toast('模板已下载', 'success');
 }
 function importExcel(file) {
@@ -1602,9 +1602,12 @@ function renderExport() {
     document.getElementById('app').innerHTML = renderNav('export') + `
     <div class="container">
         <div class="card" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;text-align:center;">
-            <div style="font-size:20px;font-weight:700;margin-bottom:8px;">📤 一键导出国网体测网格式</div>
-            <div style="font-size:13px;opacity:0.9;margin-bottom:14px;">${state.students.length} 名学生 · 21 列标准格式 · 可直接上传</div>
-            <button class="btn btn-block btn-lg" style="background:rgba(255,255,255,0.2);color:white;" onclick="doExport()">📥 下载 Excel 文件</button>
+            <div style="font-size:20px;font-weight:700;margin-bottom:6px;">📤 导出体测成绩</div>
+            <div style="font-size:13px;opacity:0.9;margin-bottom:14px;">${state.students.length} 名学生 · 21 列标准格式</div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <button class="btn btn-lg" style="width:100%;background:#2563eb;color:white;font-size:15px;padding:14px;border-radius:10px;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);" onclick="doExport()">📊 常规格式 Excel<br><span style="font-size:12px;opacity:0.9;font-weight:normal;">适合自用存档（班级编号简短）</span></button>
+                <button class="btn btn-lg" style="width:100%;background:#f59e0b;color:white;font-size:15px;padding:14px;border-radius:10px;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-weight:700;" onclick="doExportNational()">🏛️ 国网体测网专用格式<br><span style="font-size:12px;opacity:0.9;font-weight:normal;">班级编号按"入学年份+年级+班级"，可直接上传</span></button>
+            </div>
         </div>
         <div class="card" style="background:#fef2f2;border-color:#fecaca;">
             <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
@@ -1621,8 +1624,8 @@ function renderExport() {
 function formatEndurance(value) { const seconds = parseFloat(value); if (isNaN(seconds)) return ''; const mm = Math.floor(seconds/60), ss = Math.floor(seconds%60); return `${mm}'${String(ss).padStart(2,'0')}"`; }
 
 // 统一取值：有成绩返回成绩，无成绩但请假返回"请假"，都没有返回空
-// 请假映射："身高体重" → 身高/体重都算请假；"耐力跑" → 对应 800/1000 列
-function _exportVal(student, exportCol) {
+// nationalFormat=true 时，50米×8往返跑也格式化成 分'秒"，班级编号按国网格式
+function _exportVal(student, exportCol, nationalFormat) {
     // 先查成绩
     let scoreKey = exportCol;
     let val = '';
@@ -1634,6 +1637,9 @@ function _exportVal(student, exportCol) {
     } else if (exportCol === '1000米跑') {
         if (student.gender !== '男') return '';
         scoreKey = '耐力跑';
+        const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
+        if (f) return formatEndurance(f.value);
+    } else if (exportCol === '50米×8往返跑') {
         const f = state.scores.find(x => x.student_id === student.id && x.project === scoreKey);
         if (f) return formatEndurance(f.value);
     } else if (exportCol === '引体向上') {
@@ -1651,6 +1657,31 @@ function _exportVal(student, exportCol) {
         if (state.absences.find(a => a.student_id === student.id && a.project === k)) return '请假';
     }
     return '';
+}
+
+// 国网格式班级编号：从班级名称提取入学年份 + 年级代码个位 + 班级号
+// 例："小学2025级1班" → "2025101"，"初中2023级4班" → "2023304"
+function _nationalClassNo(student) {
+    const gm = GRADE_MAP[student.grade] || { code: 0 };
+    const gradeDigit = String(gm.code).slice(-1); // 年级代码个位（11→1, 21→1, 23→3）
+    // 从班级名称提取入学年份
+    let enrollYear = '';
+    const m1 = (student.class_name || '').match(/(\d{4})级/);
+    if (m1) { enrollYear = m1[1]; }
+    else {
+        // 没"级"字，试试找4位年份
+        const m2 = (student.class_name || '').match(/(\d{4})/);
+        if (m2) { enrollYear = m2[1]; }
+        else {
+            // 都没有，用当前年份推算：一年级11→当年入学，二年级12→去年入学...
+            const thisYear = new Date().getFullYear();
+            const gradeIdx = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'].indexOf(student.grade);
+            enrollYear = String(thisYear - gradeIdx);
+        }
+    }
+    // 班级号（从 class_name 提取最后一个数字）
+    const classNo = (student.class_name || '').match(/(\d+)(?:班)?$/)?.[1] || '1';
+    return enrollYear + gradeDigit + String(classNo).padStart(2, '0');
 }
 
 function doExport() {
@@ -1689,8 +1720,49 @@ function doExport() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '体测成绩');
     const now = new Date();
-    XLSX.writeFile(wb, `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`);
+    XLSX.writeFile(wb, `体测宝_体测成绩_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xls`, { bookType: 'biff8' });
     toast('导出成功！', 'success');
+}
+
+// 国网标准格式导出（和汇总版格式对齐）
+// 改3处：①50米×8往返跑格式化成 分'秒"  ②班级编号用国网格式  ③耐力跑也是 分'秒"（和现有一致）
+function doExportNational() {
+    if (state.students.length === 0) return toast('没有学生数据', 'error');
+    const gradeOrder = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'];
+    const sorted = [...state.students].sort((a,b) => { const ai = gradeOrder.indexOf(a.grade), bi = gradeOrder.indexOf(b.grade); return ai !== bi ? ai - bi : (a.class_name||'').localeCompare(b.class_name||''); });
+    const aoa = [EXPORT_COLUMNS, ...sorted.map(s => {
+        const gm = GRADE_MAP[s.grade] || { code: 0 };
+        const row = {
+            '年级编号': gm.code,
+            '班级编号': _nationalClassNo(s),
+            '班级名称': `${s.grade||''}${s.class_name||''}`,
+            '学籍号': s.student_id || '',
+            '民族代码': s.ethnicity || '',
+            '姓名': s.name || '',
+            '性别': s.gender || '',
+            '出生日期': '',
+            '家庭住址': '',
+            '身高': _exportVal(s, '身高', true),
+            '体重': _exportVal(s, '体重', true),
+            '肺活量': _exportVal(s, '肺活量', true),
+            '50米跑': _exportVal(s, '50米跑', true),
+            '坐位体前屈': _exportVal(s, '坐位体前屈', true),
+            '一分钟跳绳': _exportVal(s, '一分钟跳绳', true),
+            '一分钟仰卧起坐': _exportVal(s, '一分钟仰卧起坐', true),
+            '50米×8往返跑': _exportVal(s, '50米×8往返跑', true),
+            '立定跳远': _exportVal(s, '立定跳远', true),
+            '800米跑': _exportVal(s, '800米跑', true),
+            '1000米跑': _exportVal(s, '1000米跑', true),
+            '引体向上': _exportVal(s, '引体向上', true),
+        };
+        return EXPORT_COLUMNS.map(c => row[c] || '');
+    })];
+    const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = EXPORT_COLUMNS.map(c => ({ wch: 14 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '体测成绩');
+    const now = new Date();
+    XLSX.writeFile(wb, `体测宝_国网格式_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xls`, { bookType: 'biff8' });
+    toast('国网格式导出成功！', 'success');
 }
 
 // ============================================
