@@ -796,6 +796,24 @@ function saveScore(studentId, project, value, unit = '') {
     state.scores = state.scores.filter(sc => !(sc.student_id === studentId && sc.project === project));
     state.scores.push({ id: genUUID(), student_id: studentId, project, value: parseFloat(value), unit, recorded_at: new Date().toISOString() });
     saveScores();
+    // 请假补测：录了成绩就自动撤销对应请假记录
+    if (state.absences.find(a => a.student_id === studentId && a.project === project)) {
+        state.absences = state.absences.filter(a => !(a.student_id === studentId && a.project === project));
+        saveAbsences();
+    }
+    // 身高体重请假联动撤销
+    if (project === '身高' || project === '体重') {
+        const hw = state.absences.find(a => a.student_id === studentId && a.project === '身高体重');
+        if (hw) {
+            // 两个都录了才撤销，只录一个不撤销
+            const hasH = state.scores.find(s => s.student_id === studentId && s.project === '身高' && s.value);
+            const hasW = state.scores.find(s => s.student_id === studentId && s.project === '体重' && s.value);
+            if (hasH && hasW) {
+                state.absences = state.absences.filter(a => a !== hw);
+                saveAbsences();
+            }
+        }
+    }
 }
 function clearAll() { if (!confirm('确定要清空所有学生和成绩数据吗？此操作不可恢复！')) return; state.students = []; state.scores = []; state.absences = []; saveStudents(); saveScores(); saveAbsences(); toast('已清空', 'success'); renderHome(); }
 
@@ -1625,8 +1643,8 @@ function toggleStuDetail(id) {
 // 导出（21列国网体测网格式）
 // ============================================
 function renderExport() {
-    const gradeOrder = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'];
-    const sorted = [...state.students].sort((a,b) => { const ai = gradeOrder.indexOf(a.grade), bi = gradeOrder.indexOf(b.grade); return ai !== bi ? ai - bi : (a.class_name||'').localeCompare(b.class_name||''); });
+    // 按原始上传顺序，不排序
+    const sorted = [...state.students];
     document.getElementById('app').innerHTML = renderNav('export') + `
     <div class="container">
         <div class="card" style="background:linear-gradient(135deg,#16a34a,#15803d);color:white;text-align:center;">
@@ -1714,8 +1732,8 @@ function _nationalClassNo(student) {
 
 function doExport() {
     if (state.students.length === 0) return toast('没有学生数据', 'error');
-    const gradeOrder = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'];
-    const sorted = [...state.students].sort((a,b) => { const ai = gradeOrder.indexOf(a.grade), bi = gradeOrder.indexOf(b.grade); return ai !== bi ? ai - bi : (a.class_name||'').localeCompare(b.class_name||''); });
+    // 按原始上传顺序，不排序
+    const sorted = [...state.students];
     const aoa = [EXPORT_COLUMNS, ...sorted.map(s => {
         const gm = GRADE_MAP[s.grade] || { code: 0 };
         const cn = (s.class_name||'').match(/\d+/)?.[0] || '1';
@@ -1756,8 +1774,8 @@ function doExport() {
 // 改3处：①50米×8往返跑格式化成 分'秒"  ②班级编号用国网格式  ③耐力跑也是 分'秒"（和现有一致）
 function doExportNational() {
     if (state.students.length === 0) return toast('没有学生数据', 'error');
-    const gradeOrder = ['一年级','二年级','三年级','四年级','五年级','六年级','七年级','八年级','九年级'];
-    const sorted = [...state.students].sort((a,b) => { const ai = gradeOrder.indexOf(a.grade), bi = gradeOrder.indexOf(b.grade); return ai !== bi ? ai - bi : (a.class_name||'').localeCompare(b.class_name||''); });
+    // 按原始上传顺序，不排序
+    const sorted = [...state.students];
     const aoa = [EXPORT_COLUMNS, ...sorted.map(s => {
         const gm = GRADE_MAP[s.grade] || { code: 0 };
         const row = {
@@ -1806,17 +1824,32 @@ function renderRollCall() {
     if (rollCallTimer) { clearInterval(rollCallTimer); rollCallTimer = null; }
     rollCallAutoPlaying = false;
     
-    const students = _getFilteredStudents();
+    // 先应用班级+性别筛选
+    let students = _getFilteredStudents();
+    const gFilter = window._genderFilter || '全部';
+    if (gFilter !== '全部') students = students.filter(s => s.gender === gFilter);
     const count = students.length;
     
     document.getElementById('app').innerHTML = renderNav('rollcall') + `
     <div class="container">
         ${_classFilterBar()}
+        <div class="card" style="padding:10px 16px;margin-bottom:12px;background:#fef7ed;border-color:#fed7aa;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <span style="font-size:13px;color:#9a3412;font-weight:600;">♂♀ 性别筛选：</span>
+                <select class="input" style="padding:4px 10px;font-size:13px;width:auto;"
+                    onchange="window._genderFilter=this.value;renderRollCall();">
+                    <option value="全部" ${gFilter==='全部'?'selected':''}>全部（${_getFilteredStudents().length}人）</option>
+                    <option value="男" ${gFilter==='男'?'selected':''}>男生（${_getFilteredStudents().filter(s=>s.gender==='男').length}人）</option>
+                    <option value="女" ${gFilter==='女'?'selected':''}>女生（${_getFilteredStudents().filter(s=>s.gender==='女').length}人）</option>
+                </select>
+                <span style="font-size:12px;color:#64748b;">共 ${count} 人待点名</span>
+            </div>
+        </div>
         <div class="card">
             <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
                 <div>
                     <div class="h2" style="margin:0;">📢 排队点名</div>
-                    <div class="text-muted" style="font-size:12px;margin-top:4px;">共 ${count} 名学生 · 点击名字语音播报 · 支持自动顺序点名</div>
+                    <div class="text-muted" style="font-size:12px;margin-top:4px;">点击名字语音播报 · 支持自动顺序点名</div>
                 </div>
                 <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap;">
                     <span style="font-size:13px;color:#64748b;">间隔</span>
@@ -1876,7 +1909,7 @@ function renderRollCall() {
     }
 }
 function rollCallSpeakOne(idx) {
-    const students = _getFilteredStudents();
+    const students = _rollCallStudents();
     if (!students[idx]) return;
     // 高亮当前行
     document.querySelectorAll('.rc-row').forEach(el => el.classList.remove('active'));
@@ -1889,9 +1922,17 @@ function rollCallMarkCheck(idx) {
     const el = document.getElementById(`rc-check-${idx}`);
     if (el) el.textContent = '✅';
 }
+// 点名专用：班级+性别双筛选
+function _rollCallStudents() {
+    let list = _getFilteredStudents();
+    const gFilter = window._genderFilter || '全部';
+    if (gFilter !== '全部') list = list.filter(s => s.gender === gFilter);
+    return list;
+}
+
 function rollCallStartAuto() {
     if (rollCallAutoPlaying) return;
-    const students = _getFilteredStudents();
+    const students = _rollCallStudents();
     if (students.length === 0) return toast('暂无学生', 'error');
     
     // 重置到下一个未完成的
@@ -1916,7 +1957,7 @@ function rollCallStopAuto() {
     toast('⏹ 已停止点名', 'info');
 }
 function rollCallPlayCurrent() {
-    const students = _getFilteredStudents();
+    const students = _rollCallStudents();
     const idx = rollCallIndex;
     if (!students[idx]) { rollCallStopAuto(); toast('✅ 全部点完', 'success'); return; }
     
