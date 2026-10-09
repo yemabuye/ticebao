@@ -18,18 +18,23 @@ let teacherUuid = null;
 
 // ====== 初始化 ======
 async function initSupabase() {
-    // 生成/读取老师唯一标识
-    teacherUuid = localStorage.getItem('tb_teacher_uuid');
-    if (!teacherUuid) {
-        // 用标准 UUID 格式，匹配数据库的 uuid 类型
-        if (window.crypto && crypto.randomUUID) {
-            teacherUuid = crypto.randomUUID();
-        } else {
-            teacherUuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
+    // 优先用 Supabase Auth 的 user.id（多设备同步的关键！）
+    // 没登录时才用本地生成的 UUID
+    try {
+        if (supabase && supabase.auth) {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.user?.id) {
+                teacherUuid = data.session.user.id;
+            }
         }
+    } catch {}
+    
+    // 如果没有 auth session，用本地生成的 UUID（降级方案）
+    if (!teacherUuid) {
+        teacherUuid = localStorage.getItem('tb_teacher_uuid');
+    }
+    if (!teacherUuid) {
+        teacherUuid = crypto.randomUUID();
         localStorage.setItem('tb_teacher_uuid', teacherUuid);
     }
 
@@ -99,10 +104,15 @@ async function cloudSyncStudents(localStudents) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
+        // 同时查 auth.user.id 和 旧本地 UUID（兼容历史数据）
+        const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
+        const uuids = [teacherUuid];
+        if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
+        
         const { data: cloudStudents, error: fetchErr } = await supabase
             .from('students')
             .select('*')
-            .eq('teacher_uuid', teacherUuid);
+            .in('teacher_uuid', uuids);
         if (fetchErr) throw fetchErr;
 
         // 本地为主，补充云端新增
@@ -157,10 +167,14 @@ async function cloudSyncScores(localScores) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
+        const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
+        const uuids = [teacherUuid];
+        if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
+        
         const { data: cloudScores, error: fetchErr } = await supabase
             .from('scores')
             .select('*')
-            .eq('teacher_uuid', teacherUuid);
+            .in('teacher_uuid', uuids);
         if (fetchErr) throw fetchErr;
 
         // 本地为主，补充云端新增
@@ -214,10 +228,14 @@ async function cloudSyncAbsences(localAbsences) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
+        const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
+        const uuids = [teacherUuid];
+        if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
+        
         const { data: cloudAbs, error: fetchErr } = await supabase
             .from('absences')
             .select('*')
-            .eq('teacher_uuid', teacherUuid);
+            .in('teacher_uuid', uuids);
         if (fetchErr) throw fetchErr;
 
         const localIds = new Set(localAbsences.map(a => a.id));
