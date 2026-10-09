@@ -317,9 +317,29 @@ function toast(msg, type = '') {
 // ============================================
 // 评分引擎
 // ============================================
-function getScore(grade, gender, project, value) {
-    if (!value || isNaN(value)) return null;
+// 按短表名找评分表（数据文件里的 key 是 "表1-15  男生耐力跑..." 长名，这里做前缀兼容）
+function resolveScoringTable(shortKey) {
     const tables = window.SCORING_TABLES?.tables || {};
+    if (!shortKey) return null;
+    if (tables[shortKey]) return tables[shortKey];
+    const foundKey = Object.keys(tables).find(k =>
+        k === shortKey || k.startsWith(shortKey + ' ') || k.startsWith(shortKey + '\u3000')
+    );
+    return foundKey ? tables[foundKey] : null;
+}
+
+// 把表格单元格统一转成数字；耐力跑单元格是 3'17" 这种分秒，转成秒
+function parseScoreCell(v) {
+    if (typeof v === 'number') return v;
+    if (v === null || v === undefined || v === '') return NaN;
+    const s = String(v).trim();
+    const m = s.match(/(\d+)\s*['′’]\s*(\d{1,2})/);
+    if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);
+    return parseFloat(s.replace(/[^\d.]/g, ''));
+}
+
+function getScore(grade, gender, project, value) {
+    if (value === null || value === undefined || value === '') return null;
     if (project === 'BMI') return calcBMI(grade, gender, value);
     const projectMap = {
         '肺活量': {男: '表1-3', 女: '表1-4'},
@@ -328,27 +348,22 @@ function getScore(grade, gender, project, value) {
         '一分钟跳绳': {男: '表1-9', 女: '表1-10'},
         '立定跳远': {男: '表1-11', 女: '表1-12'},
         '一分钟仰卧起坐': {男: '表1-13', 女: '表1-14'},
-        '仰卧起坐引体': {男: '表2-3', 女: '表2-4'},
-        '耐力跑': {男: '表2-5', 女: '表26'},
+        '仰卧起坐引体': {男: '表1-13', 女: '表1-14'},
+        '耐力跑': {男: '表1-15', 女: '表1-16'},
         '50米×8往返跑': {男: '表1-15', 女: '表1-16'},
     };
     const tableKey = projectMap[project];
     if (!tableKey) return null;
-    let table = tables[gender === '女' ? tableKey.女 : tableKey.男];
+    const table = resolveScoringTable(gender === '女' ? tableKey.女 : tableKey.男);
     if (!table || !table[0]) return null;
     const gradeCol = grade;
     const smallerIsBetter = ['50米跑', '50米×8往返跑', '耐力跑'].includes(project);
-    let numVal = value;
-    if (typeof value === 'string' && /['":：]/.test(value)) {
-        const parts = value.replace(/['":：]/g, ' ').trim().split(/\s+/);
-        if (parts.length === 2) numVal = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-    }
-    numVal = parseFloat(numVal);
+    const numVal = parseScoreCell(value);
     if (isNaN(numVal)) return null;
     for (let row of table) {
-        let rowVal = parseFloat(row[gradeCol]);
+        const rowVal = parseScoreCell(row[gradeCol]);
         if (isNaN(rowVal)) continue;
-        let match = smallerIsBetter ? numVal <= rowVal : numVal >= rowVal;
+        const match = smallerIsBetter ? numVal <= rowVal : numVal >= rowVal;
         if (match && row['等级']) {
             return { level: row['等级'], score: parseFloat(row['得分']), value: numVal };
         }
@@ -357,15 +372,14 @@ function getScore(grade, gender, project, value) {
 }
 
 function calcBMI(grade, gender, bmiObj) {
-    if (!bmiObj.height || !bmiObj.weight) return null;
+    if (!bmiObj || !bmiObj.height || !bmiObj.weight) return null;
     const heightM = bmiObj.height / 100;
     const bmi = bmiObj.weight / (heightM * heightM);
-    const tables = window.SCORING_TABLES?.tables || {};
-    const table = tables[gender === '女' ? '表1-2' : '表1-1'];
+    const table = resolveScoringTable(gender === '女' ? '表1-2' : '表1-1');
     if (!table) return null;
     const gradeCol = grade;
     for (let row of table) {
-        let thresh = parseFloat(row[gradeCol]);
+        let thresh = parseScoreCell(row[gradeCol]);
         if (isNaN(thresh)) continue;
         const op = row['等级'] === '肥胖' ? '>=' : '<=';
         if ((op === '>=' ? bmi >= thresh : bmi <= thresh) && row['等级']) {
@@ -1255,6 +1269,7 @@ function renderEndurance() {
                 </div>
                 ${enduranceQueue.length > 0 ? `<button class="btn btn-ghost btn-block btn-sm" style="margin-top:10px;" onclick="endurancePause()">⏸ 暂停 → 进入认领模式</button>` : ''}
             </div>
+            ${renderSavedEnduranceList()}
             ` : `
             <div style="background:#fef3c7;border:1px solid #fbbf24;padding:12px;border-radius:8px;margin-bottom:12px;">
                 <div style="font-size:14px;font-weight:700;color:#92400e;">🎯 认领模式</div>
@@ -1279,6 +1294,37 @@ function renderEndurance() {
 }
 
 function getSavedCount() { return state.scores.filter(sc => sc.project === ENDURANCE_PROJECT).length; }
+
+// 格式化秒为 4'36.9"
+function fmtEndurance(sec) {
+    sec = parseFloat(sec) || 0;
+    const mm = Math.floor(sec / 60);
+    const remain = sec - mm * 60;
+    return `${mm}'${remain.toFixed(1).padStart(4, '0')}"`;
+}
+
+// 已录耐力跑成绩列表（进入页面就能看到历史成绩）
+function renderSavedEnduranceList() {
+    const saved = state.scores.filter(sc => sc.project === ENDURANCE_PROJECT);
+    if (saved.length === 0) return '';
+    const stuOf = id => state.students.find(x => x.id === id);
+    return `<div class="card" style="margin-top:16px;background:#eff6ff;border:1px solid #93c5fd;">
+        <div style="font-size:13px;color:#1e40af;font-weight:600;margin-bottom:8px;">📋 已录成绩（${saved.length} 人）</div>
+        ${saved.map(sc => { const stu = stuOf(sc.student_id); return `<div class="end-row">
+            <div class="end-name"><span style="font-weight:600;">${stu ? stu.name : '未知学生'}</span><span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${stu ? (stu.gender||'') : ''}</span></div>
+            <span style="font-family:monospace;font-weight:700;color:#1d4ed8;font-size:13px;">${fmtEndurance(sc.value)}</span>
+            <button class="btn btn-sm btn-danger" style="padding:4px 8px;font-size:12px;margin-left:8px;" onclick="enduranceDeleteScore('${sc.id}')">删除</button>
+        </div>`; }).join('')}
+    </div>`;
+}
+
+function enduranceDeleteScore(scoreId) {
+    if (!confirm('确定删除这条耐力跑成绩吗？')) return;
+    state.scores = state.scores.filter(sc => sc.id !== scoreId);
+    saveScores();
+    toast('已删除', 'success');
+    renderEndurance();
+}
 
 function renderClaimStudentList() {
     if (state.students.length === 0) return '<div class="empty">请先导入学生名单</div>';
