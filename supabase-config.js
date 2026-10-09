@@ -129,7 +129,8 @@ async function cloudSyncStudents(localStudents) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
-        await refreshTeacherUuid();  // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
         // 同时查 auth.user.id 和 旧本地 UUID（兼容历史数据）
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
@@ -193,7 +194,8 @@ async function cloudSyncScores(localScores) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
-        await refreshTeacherUuid();  // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
         if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
@@ -255,7 +257,8 @@ async function cloudSyncAbsences(localAbsences) {
     if (!supabaseReady || !supabase) return { status: 'offline', count: 0 };
 
     try {
-        await refreshTeacherUuid();  // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
+        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
         if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
