@@ -1,5 +1,6 @@
 // Service Worker - 体测宝离线缓存
-const CACHE = 'tiance-bao-v9';
+// v10：网络优先（在线永远拿最新代码），离线才用缓存，彻底解决旧代码不更新问题
+const CACHE = 'tiance-bao-v10';
 const ASSETS = [
     './',
     './index.html',
@@ -16,7 +17,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
     e.waitUntil(
-        caches.keys().then(keys => 
+        caches.keys().then(keys =>
             Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
         )
     );
@@ -25,16 +26,16 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
     if (e.request.method !== 'GET') return;
+    // 网络优先：在线时一定拿到最新文件，并顺手更新缓存；断网时回退缓存
     e.respondWith(
-        caches.match(e.request).then(cached => {
-            const fetchPromise = fetch(e.request).then(response => {
-                if (response && response.status === 200 && response.type === 'basic') {
-                    const clone = response.clone();
-                    caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
-                }
-                return response;
-            }).catch(() => cached);
-            return cached || fetchPromise;
-        })
+        fetch(e.request).then(response => {
+            if (response && response.status === 200 && response.type === 'basic') {
+                const clone = response.clone();
+                const u = new URL(e.request.url);
+                u.search = '';  // 去掉 ?v=xxx，缓存按干净路径存
+                caches.open(CACHE).then(c => c.put(u.toString(), clone)).catch(()=>{});
+            }
+            return response;
+        }).catch(() => caches.match(e.request, { ignoreSearch: true }))
     );
 });
