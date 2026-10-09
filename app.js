@@ -623,6 +623,8 @@ async function doSignIn() {
         }
         
         toast('✅ 登录成功', 'success');
+        // 登录后刷新 teacherUuid（从 auth session 取统一 user.id）
+        if (window.SB) await SB.init();
         navigate('home');
     } catch (e) {
         toast('登录失败', 'error');
