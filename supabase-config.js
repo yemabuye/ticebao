@@ -16,6 +16,25 @@ let supabase = null;
 let supabaseReady = false;
 let teacherUuid = null;
 
+// ====== 保险函数：全局可用 ======
+// 防止旧版 SW 缓存的同步函数调用 refreshTeacherUuid 时报错
+// 同时作为新版同步函数的统一入口
+async function refreshTeacherUuid() {
+    if (supabase && supabase.auth) {
+        try {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.user?.id) {
+                const newId = data.session.user.id;
+                if (teacherUuid !== newId) {
+                    console.log('[Supabase] 🔄 teacherUuid 刷新:', teacherUuid, '→', newId);
+                    teacherUuid = newId;
+                    localStorage.setItem('tb_teacher_uuid', newId);
+                }
+            }
+        } catch (e) {}
+    }
+}
+
 // ====== 初始化 ======
 async function initSupabase() {
     if (!window.supabase) {
@@ -57,24 +76,6 @@ async function initSupabase() {
             teacherUuid = crypto.randomUUID();
             localStorage.setItem('tb_teacher_uuid', teacherUuid);
         }
-
-        // 保险函数：每次同步前刷新 teacherUuid（防止手机 SW 缓存旧代码导致用错 UUID）
-        async function refreshTeacherUuid() {
-            if (supabase && supabase.auth) {
-                try {
-                    const { data } = await supabase.auth.getSession();
-                    if (data?.session?.user?.id) {
-                        const newId = data.session.user.id;
-                        if (teacherUuid !== newId) {
-                            console.log('[Supabase] 🔄 teacherUuid 从', teacherUuid, '刷新为', newId);
-                            teacherUuid = newId;
-                            localStorage.setItem('tb_teacher_uuid', newId);
-                        }
-                    }
-                } catch (e) {}
-            }
-        }
-        window._refreshTeacherUuid = refreshTeacherUuid;
 
         // 测试连通性（自定义 RPC 失败不影响 auth API 可用）
         try {
@@ -130,7 +131,7 @@ async function cloudSyncStudents(localStudents) {
 
     try {
         // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
-        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
+        await refreshTeacherUuid();
         // 同时查 auth.user.id 和 旧本地 UUID（兼容历史数据）
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
@@ -195,7 +196,7 @@ async function cloudSyncScores(localScores) {
 
     try {
         // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
-        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
+        await refreshTeacherUuid();
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
         if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
@@ -258,7 +259,7 @@ async function cloudSyncAbsences(localAbsences) {
 
     try {
         // 🔄 保险：同步前刷新 teacherUuid 为 auth user.id
-        if (supabase.auth) { try { const { data } = await supabase.auth.getSession(); if (data?.session?.user?.id) { teacherUuid = data.session.user.id; localStorage.setItem('tb_teacher_uuid', teacherUuid); } } catch(e) {} }
+        await refreshTeacherUuid();
         const oldLocalUuid = localStorage.getItem('tb_teacher_uuid');
         const uuids = [teacherUuid];
         if (oldLocalUuid && oldLocalUuid !== teacherUuid) uuids.push(oldLocalUuid);
