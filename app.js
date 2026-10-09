@@ -625,6 +625,19 @@ async function doSignIn() {
         toast('✅ 登录成功', 'success');
         // 登录后刷新 teacherUuid（从 auth session 取统一 user.id）
         if (window.SB) await SB.init();
+        // 登录后立即同步云端数据（teacherUuid 已刷新为 auth user.id）
+        if (window.SB && SB.ready()) {
+            try {
+                const sRes = await SB.syncStudents(state.students);
+                const scRes = await SB.syncScores(state.scores);
+                const aRes = await SB.syncAbsences(state.absences);
+                if (sRes.data) { state.students = sRes.data; saveStudents(); }
+                if (scRes.data) { state.scores = scRes.data; saveScores(); }
+                if (aRes.data) { state.absences = aRes.data; saveAbsences(); }
+                const total = (sRes.data?.length||0) + (scRes.data?.length||0) + (aRes.data?.length||0);
+                if (total > 0) toast(`☁️ 已同步 ${total} 条数据`, 'success');
+            } catch(e) { console.warn('登录后同步跳过:', e.message); }
+        }
         navigate('home');
     } catch (e) {
         toast('登录失败', 'error');
