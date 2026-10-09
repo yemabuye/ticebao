@@ -631,10 +631,21 @@ async function doSignIn() {
                 const sRes = await SB.syncStudents(state.students);
                 const scRes = await SB.syncScores(state.scores);
                 const aRes = await SB.syncAbsences(state.absences);
-                if (sRes.data) { state.students = sRes.data; saveStudents(); }
-                if (scRes.data) { state.scores = scRes.data; saveScores(); }
-                if (aRes.data) { state.absences = aRes.data; saveAbsences(); }
-                const total = (sRes.data?.length||0) + (scRes.data?.length||0) + (aRes.data?.length||0);
+                
+                // 🔄 Fallback：cloudSync 报错或空时，直接用 supabase 原始查询
+                if (!sRes.data || sRes.status === 'error') {
+                    try { const { data } = await supabase.from('students').select('*'); if (data?.length > 0) { state.students = data; saveStudents(); } } catch(e) {}
+                } else { state.students = sRes.data; saveStudents(); }
+                
+                if (!scRes.data || scRes.status === 'error') {
+                    try { const { data } = await supabase.from('scores').select('*'); if (data?.length > 0) { state.scores = data; saveScores(); } } catch(e) {}
+                } else { state.scores = scRes.data; saveScores(); }
+                
+                if (!aRes.data || aRes.status === 'error') {
+                    try { const { data } = await supabase.from('absences').select('*'); if (data?.length > 0) { state.absences = data; saveAbsences(); } } catch(e) {}
+                } else { state.absences = aRes.data; saveAbsences(); }
+                
+                const total = state.students.length + state.scores.length + state.absences.length;
                 if (total > 0) toast(`☁️ 已同步 ${total} 条数据`, 'success');
             } catch(e) { console.warn('登录后同步跳过:', e.message); }
         }
@@ -2375,11 +2386,38 @@ function beep(freq = 880, duration = 200) { try { const ctx = new (window.AudioC
             const sRes = await SB.syncStudents(state.students);
             const scRes = await SB.syncScores(state.scores);
             const aRes = await SB.syncAbsences(state.absences);
-            // 用 merge 结果回写 state + 持久化（确保云端新增的数据不丢）
-            if (sRes.data) { state.students = sRes.data; saveStudents(); }
-            if (scRes.data) { state.scores = scRes.data; saveScores(); }
-            if (aRes.data) { state.absences = aRes.data; saveAbsences(); }
-            const total = (sRes.data?.length||0) + (scRes.data?.length||0) + (aRes.data?.length||0);
+            
+            // 🔄 Fallback：如果 cloudSync 函数报错，直接用 supabase 原始查询拉数据
+            if (!sRes.data || sRes.status === 'error') {
+                try {
+                    const { data } = await supabase.from('students').select('*');
+                    if (data && data.length > 0) { state.students = data; saveStudents(); }
+                    console.log('[体测宝] Fallback: 直接拉到学生', data?.length, '条');
+                } catch(e) { console.warn('[体测宝] Fallback 学生失败:', e.message); }
+            } else {
+                state.students = sRes.data; saveStudents();
+            }
+            
+            if (!scRes.data || scRes.status === 'error') {
+                try {
+                    const { data } = await supabase.from('scores').select('*');
+                    if (data && data.length > 0) { state.scores = data; saveScores(); }
+                    console.log('[体测宝] Fallback: 直接拉到成绩', data?.length, '条');
+                } catch(e) { console.warn('[体测宝] Fallback 成绩失败:', e.message); }
+            } else {
+                state.scores = scRes.data; saveScores();
+            }
+            
+            if (!aRes.data || aRes.status === 'error') {
+                try {
+                    const { data } = await supabase.from('absences').select('*');
+                    if (data && data.length > 0) { state.absences = data; saveAbsences(); }
+                } catch(e) {}
+            } else {
+                state.absences = aRes.data; saveAbsences();
+            }
+            
+            const total = state.students.length + state.scores.length + state.absences.length;
             if (total > 0) toast(`☁️ 已同步 ${total} 条数据`, 'success');
         } catch(e) { console.warn('自动同步跳过:', e.message); }
     }
