@@ -1,5 +1,5 @@
 // Service Worker - 体测宝离线缓存
-const CACHE = 'tiance-bao-v4';
+const CACHE = 'tiance-bao-v5';
 const ASSETS = [
     './',
     './index.html',
