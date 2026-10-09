@@ -18,26 +18,6 @@ let teacherUuid = null;
 
 // ====== 初始化 ======
 async function initSupabase() {
-    // 优先用 Supabase Auth 的 user.id（多设备同步的关键！）
-    // 没登录时才用本地生成的 UUID
-    try {
-        if (supabase && supabase.auth) {
-            const { data } = await supabase.auth.getSession();
-            if (data?.session?.user?.id) {
-                teacherUuid = data.session.user.id;
-            }
-        }
-    } catch {}
-    
-    // 如果没有 auth session，用本地生成的 UUID（降级方案）
-    if (!teacherUuid) {
-        teacherUuid = localStorage.getItem('tb_teacher_uuid');
-    }
-    if (!teacherUuid) {
-        teacherUuid = crypto.randomUUID();
-        localStorage.setItem('tb_teacher_uuid', teacherUuid);
-    }
-
     if (!window.supabase) {
         console.warn('[Supabase] supabase-js 未加载，使用纯 LocalStorage 模式');
         supabaseReady = false;
@@ -45,12 +25,37 @@ async function initSupabase() {
     }
 
     try {
+        // 先创建 client，再取 auth session（多设备同步的关键！）
+        // persistSession:true 会自动从 localStorage 恢复 session
         supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: { 
+            auth: {
                 persistSession: true,  // ✅ session 存 localStorage，关闭浏览器不丢
                 autoRefreshToken: true  // ✅ 自动刷新 token，过期前悄悄换新的
             }
         });
+
+        // 登录后从 auth session 取 user.id 作为 teacherUuid（跨设备统一）
+        try {
+            if (supabase && supabase.auth) {
+                const { data } = await supabase.auth.getSession();
+                if (data?.session?.user?.id) {
+                    teacherUuid = data.session.user.id;
+                    console.log('[Supabase] ✅ 已登录，teacherUuid = auth user.id:', teacherUuid);
+                }
+            }
+        } catch (authErr) {
+            console.warn('[Supabase] auth session 读取失败:', authErr.message);
+        }
+
+        // 如果没有 auth session，用本地生成的 UUID（降级方案，离线/未登录时用）
+        if (!teacherUuid) {
+            teacherUuid = localStorage.getItem('tb_teacher_uuid');
+        }
+        if (!teacherUuid) {
+            teacherUuid = crypto.randomUUID();
+            localStorage.setItem('tb_teacher_uuid', teacherUuid);
+        }
+
         // 测试连通性（自定义 RPC 失败不影响 auth API 可用）
         try {
             await supabase.rpc('validate_activation_code', { input_code: 'TCB-TRIAL-20260921-78A8D2' });
@@ -58,7 +63,7 @@ async function initSupabase() {
             console.warn('[Supabase] RPC 测试跳过（不影响登录/忘记密码）:', rpcErr.message);
         }
         supabaseReady = true;
-        console.log('[Supabase] ✅ 连接成功，启用云端同步');
+        console.log('[Supabase] ✅ 连接成功，启用云端同步，teacherUuid:', teacherUuid);
         return true;
     } catch (err) {
         console.warn('[Supabase] ❌ client 创建失败:', err.message);
