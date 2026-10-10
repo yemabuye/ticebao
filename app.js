@@ -1746,8 +1746,29 @@ function renderAnalysis() {
                                 const adv = TRAINING_ADVICE[r.project]; if (!adv) return '';
                                 const isFail = r.level === '不及格';
                                 const plan = isFail ? (adv.fail || adv) : (adv.improve || adv);
+                                const fmtVal = (r.project==='耐力跑'||r.project==='50米×8往返跑') ? fmtEndurance(r.value) : r.value;
+                                // 算离及格线差多少（从评分表找及格那一行的数值）
+                                let gapInfo = '';
+                                try {
+                                    const tbl = resolveScoringTable(s.gender==='女' ? 
+                                        ({'耐力跑':'表1-16','50米×8往返跑':'表1-16','50米跑':'表1-6','立定跳远':'表1-12','坐位体前屈':'表1-8','肺活量':'表1-4','一分钟跳绳':'表1-10','一分钟仰卧起坐':'表1-14','仰卧起坐引体':'表1-14'})[r.project] || '表1-1' :
+                                        ({'耐力跑':'表1-15','50米×8往返跑':'表1-15','50米跑':'表1-5','立定跳远':'表1-11','坐位体前屈':'表1-7','肺活量':'表1-3','一分钟跳绳':'表1-9','一分钟仰卧起坐':'表1-13','仰卧起坐引体':'表1-13'})[r.project] || '表1-1');
+                                    if (tbl) {
+                                        const passRow = tbl.find(row => row['等级'] === '及格');
+                                        if (passRow) {
+                                            const passVal = parseScoreCell(passRow[s.grade||'九年级']);
+                                            if (!isNaN(passVal)) {
+                                                const smaller = ['50米跑','50米×8往返跑','耐力跑'].includes(r.project);
+                                                const diff = smaller ? (r.value - passVal) : (passVal - r.value);
+                                                const fmtPass = (r.project==='耐力跑'||r.project==='50米×8往返跑') ? fmtEndurance(passVal) : passVal;
+                                                if (isFail) gapInfo = `，距及格线 ${fmtPass} 还差 ${fmtEndurance(Math.max(0,diff))}${smaller?'':'左右'}`;
+                                                else gapInfo = `，距优秀线还有提升空间`;
+                                            }
+                                        }
+                                    }
+                                } catch(e) {}
                                 return `<div style="margin:8px 0;padding:10px;${isFail ? 'background:#fef2f2;' : 'background:#eff6ff;'}border-radius:8px;">
-                                    <div style="font-weight:600;font-size:13px;">${isFail ? '🚨 补救' : '📈 提升'}：${r.project}（当前${r.level}，练：${adv.name}）</div>
+                                    <div style="font-weight:600;font-size:13px;">${isFail ? '🚨 补救' : '📈 提升'}：${r.project}（当前 ${fmtVal}，${r.level}${gapInfo}）</div>
                                     ${plan.methods.map(m => `<div style="font-size:12px;color:#475569;margin:3px 0 0 10px;">• ${m}</div>`).join('')}
                                     <div style="font-size:12px;color:${isFail ? '#dc2626' : '#2563eb'};margin-top:4px;margin-left:10px;">⏰ ${plan.freq}</div>
                                     ${isFail && adv.safety ? `<div style="font-size:12px;color:#dc2626;margin-top:3px;margin-left:10px;">⚠️ ${adv.safety}</div>` : ''}
