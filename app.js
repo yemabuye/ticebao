@@ -917,7 +917,7 @@ function clearAll() { if (!confirm('确定要清空所有学生和成绩数据�
 // ====== 50米跑独立计时器状态 ======
 let timerQueue = [];          // 时间队列
 let timerPhase = 'running';   // 'running' | 'claiming'
-let targetLaneCount = 6;      // 目标道次数（4/6/8）
+let targetLaneCount = 6;      // 目标道次数（3~8 可选）
 let timerRafId = null;
 
 // ====== 50米跑 UI（两阶段：计时中 → 认领中） ======
@@ -929,9 +929,12 @@ function renderTimer() {
         <div class="card">
             <div class="flex-between" style="margin-bottom:8px;">
                 <div class="h2" style="margin:0;">⏱️ 50米跑计时</div>
-                <select id="timer-lanes" class="input" style="width:80px;" onchange="changeLaneCount(this.value)">
+                <select id="timer-lanes" class="input" style="width:90px;" onchange="changeLaneCount(this.value)">
+                    <option value="3" ${targetLaneCount==3?'selected':''}>3 道</option>
                     <option value="4" ${targetLaneCount==4?'selected':''}>4 道</option>
+                    <option value="5" ${targetLaneCount==5?'selected':''}>5 道</option>
                     <option value="6" ${targetLaneCount==6?'selected':''}>6 道</option>
+                    <option value="7" ${targetLaneCount==7?'selected':''}>7 道</option>
                     <option value="8" ${targetLaneCount==8?'selected':''}>8 道</option>
                 </select>
             </div>
@@ -2001,10 +2004,14 @@ function renderRollCall() {
                 <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap;">
                     <span style="font-size:13px;color:#64748b;">间隔</span>
                     <select id="rc-interval" class="input" style="padding:4px 8px;font-size:13px;width:auto;" onchange="rollCallIntervalSec=parseInt(this.value);document.querySelectorAll('.interval-reload').forEach(fn=>fn());">
+                        <option value="2" ${rollCallIntervalSec===2?'selected':''}>2秒</option>
                         <option value="3" ${rollCallIntervalSec===3?'selected':''}>3秒</option>
+                        <option value="4" ${rollCallIntervalSec===4?'selected':''}>4秒</option>
                         <option value="5" ${rollCallIntervalSec===5?'selected':''}>5秒</option>
+                        <option value="6" ${rollCallIntervalSec===6?'selected':''}>6秒</option>
                         <option value="8" ${rollCallIntervalSec===8?'selected':''}>8秒</option>
                         <option value="10" ${rollCallIntervalSec===10?'selected':''}>10秒</option>
+                        <option value="15" ${rollCallIntervalSec===15?'selected':''}>15秒</option>
                     </select>
                     <button class="btn btn-primary btn-sm" onclick="rollCallStartAuto()">▶ 自动点名</button>
                     <button class="btn btn-danger btn-sm" onclick="rollCallStopAuto()">⏹ 停止</button>
