@@ -483,7 +483,6 @@ function isMobileDevice() {
 }
 
 function renderAppBanner() {
-    if (isMobileDevice()) return '';
     return `
     <div class="card" style="background:linear-gradient(135deg,#1e3a8a,#2563eb);color:white;display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <div>
@@ -495,7 +494,6 @@ function renderAppBanner() {
 }
 
 function renderAppDownload() {
-    if (isMobileDevice()) return '';
     return `
     <div class="card" style="margin-top:16px;text-align:left;">
         <div style="font-size:16px;font-weight:700;color:#1e3a8a;">📱 安卓 App 下载</div>
