@@ -416,6 +416,7 @@ function renderAuth() {
             ${authMode === 'signup' ? renderSignupStep1() : renderLoginForm()}
             ` : state.signupStep === 1 ? renderSignupStep2() : renderSignupStep3()}
             ${renderAnnouncement()}
+            ${renderAppDownload()}
         </div>
     </div>`;
 }
@@ -471,6 +472,29 @@ function renderLoginForm() {
         <a style="color:#2563eb;font-size:13px;cursor:pointer;" onclick="forgotPassword()">忘记密码？</a>
     </div>
     <button class="btn btn-block btn-ghost" onclick="authMode='signup';renderAuth();">📝 没有账号？注册</button>`;
+}
+
+// ============================================
+// 安卓 App 下载卡片
+// ============================================
+function renderAppDownload() {
+    return `
+    <div class="card" style="margin-top:16px;text-align:left;">
+        <div style="font-size:16px;font-weight:700;color:#1e3a8a;">📱 安卓 App 下载</div>
+        <div style="font-size:12px;color:#64748b;margin:6px 0 12px;line-height:1.6;">
+            现场计时、名单录入更快，数据与网页实时同步。iPhone 请直接使用网页版。
+        </div>
+        <a href="apk/ticebao-latest.apk" download class="btn btn-primary btn-block" style="text-decoration:none;display:block;text-align:center;">⬇️ 下载最新版 App</a>
+        <div style="font-size:12px;color:#64748b;margin-top:12px;line-height:1.9;background:#f8fafc;border-radius:8px;padding:10px;">
+            <b style="color:#1e3a8a;">安装步骤</b><br>
+            1. 点上面的按钮，下载安装包<br>
+            2. 下载完成后点「安装」<br>
+            3. 提示「禁止安装未知应用」时，点「设置」，打开允许后返回<br>
+            4. 提示「应用未经过安全检测」时，点「继续安装」<br>
+            5. 安装完打开，用网页同一个账号登录<br>
+            <span style="color:#dc2626;font-weight:600;">当前版本 v1.0.7，每次发版此文件自动覆盖为最新</span>
+        </div>
+    </div>`;
 }
 
 // === 验证码流程 ===
