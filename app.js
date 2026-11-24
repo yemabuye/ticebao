@@ -531,14 +531,18 @@ function renderDownload() {
         <div class="h2" style="margin-top:20px;">📱 安卓手机安装</div>
         <div class="card" style="font-size:13px;line-height:2;color:#334155;">
             <b>1.</b> 点下面的按钮下载安装包，约 70 MB<br>
-            <b>2.</b> 下载完成后，从屏幕顶部下拉通知栏，点那条下载完成的提示<br>
-            <b>3.</b> 提示「禁止安装未知应用」时，点「设置」打开允许，返回后再点安装<br>
-            <b>4.</b> 提示「未经安全检测」时，点「继续安装」<br>
-            <b>5.</b> 装好打开，用网页同一个账号登录，数据自动同步
+            <b>2.</b> 手机会弹出下载确认页。荣耀、华为会跳到应用市场，显示「网页安装包 · 未经荣耀安全检测」，这是正常的<br>
+            <b>3.</b> 点「下载」，等进度走完<br>
+            <b>4.</b> 按钮变成「安装」后，点「安装」<br>
+            <b>5.</b> 若提示「禁止安装未知应用」，点「设置」打开允许后返回；若提示「未经安全检测」，点「继续安装」<br>
+            <b>6.</b> 装好打开，用网页同一个账号登录，数据自动同步
         </div>
         <a href="apk/ticebao-latest.apk" download style="text-decoration:none;">
             <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.7</div>
         </a>
+        <div class="card" style="font-size:12px;line-height:1.8;color:#b45309;background:#fffbeb;border:1px solid #fde68a;margin-top:10px;">
+            ⚠️ 不要在微信里直接点下载，微信会拦截安装包。请按上面的方法用浏览器打开本页。
+        </div>
 
         <div class="h2" style="margin-top:20px;">💻 电脑下载，再传到手机</div>
         <div class="card" style="font-size:13px;line-height:2;color:#334155;">
