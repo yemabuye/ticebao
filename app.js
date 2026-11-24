@@ -156,8 +156,12 @@ function _getAllClasses() {
     return Array.from(set).sort();
 }
 function _getFilteredStudents() {
-    if (window._classFilter === '全部') return state.students;
-    return state.students.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === window._classFilter);
+    let list = state.students;
+    const cf = window._classFilter || '全部';
+    if (cf !== '全部') list = list.filter(s => `${s.grade||''}${s.class_name||'未分班'}` === cf);
+    const gf = window._genderFilter || '全部';
+    if (gf !== '全部') list = list.filter(s => (s.gender || '') === gf);
+    return list;
 }
 function _classFilterBar() {
     const classes = _getAllClasses();
@@ -201,6 +205,7 @@ function _stopSpeak() {
 function navigate(view) {
     document.getElementById('app').innerHTML = '';
     window.scrollTo(0, 0);
+    window._liveView = view;
     
     // 未登录 → 强制去登录页
     if (!state.authed && view !== 'auth') {
@@ -661,6 +666,8 @@ async function doSignIn() {
                 
                 const total = state.students.length + state.scores.length + state.absences.length;
                 if (total > 0) toast(`☁️ 已同步 ${total} 条数据`, 'success');
+                // 开启实时推送：手机端一录，这里自动更新
+                if (SB.startRealtime) SB.startRealtime(_applyLiveScore);
             } catch(e) { console.warn('登录后同步跳过:', e.message); }
         }
         navigate('home');
@@ -1433,12 +1440,14 @@ function enduranceFinishAll() {
 // 身高体重 (BMI) 独立录入
 // ============================================
 function renderHeightEntry() {
+    window._entryReload = _renderBMI;
     document.getElementById('app').innerHTML = renderNav('height') + `
     <div class="container">
         ${_classFilterBar()}
+        ${_genderBar()}
         <div class="card">
             <div class="h2">📏 身高体重录入 (自动计算 BMI)</div>
-            <div class="text-muted" style="font-size:12px;margin-top:4px;">输入身高(cm)和体重(kg)，自动判定 BMI 等级</div>
+            <div class="text-muted" style="font-size:12px;margin-top:4px;">按名单顺序录入，身高满3位自动跳到体重，体重输完自动跳到下一位。体重三位数末位算小数（525 = 52.5）</div>
         </div>
         <div class="card" id="input-card"></div>
     </div>`;
@@ -1456,8 +1465,8 @@ function _renderBMI() {
         return `<div class="score-input-row">
             <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
             ${_absenceCell(s.id,'身高体重','height')}
-            <input class="score-input-box" type="number" placeholder="身高cm" value="${scH?.value||''}" onchange="saveScore('${s.id}','身高',this.value,'cm');_renderBMI();" style="width:85px;">
-            <input class="score-input-box" type="number" placeholder="体重kg" step="0.1" value="${scW?.value||''}" onchange="saveScore('${s.id}','体重',this.value,'kg');_renderBMI();" style="width:85px;">
+            <input id="h-${s.id}" class="score-input-box ${scH&&scH.value?'filled':''}" inputmode="numeric" placeholder="身高cm" value="${scH?.value||''}" style="width:85px;" oninput="_heightInput('${s.id}',this)" onchange="_heightCommit('${s.id}',this.value)">
+            <input id="w-${s.id}" class="score-input-box ${scW&&scW.value?'filled':''}" inputmode="numeric" placeholder="体重kg" value="${scW?.value||''}" style="width:85px;" oninput="_weightInput('${s.id}',this)" onchange="_weightCommit('${s.id}',this.value)">
             <span class="score-level" id="bmi-${s.id}"></span>
         </div>`;
     }).join('')}`).join('');
@@ -1474,17 +1483,164 @@ function recalcBMI(studentId) {
 }
 
 // ============================================
+// 实时推送：手机端录完，网站自动更新
+// ============================================
+function _applyLiveScore(payload) {
+    const row = payload.new || payload.old;
+    if (!row || !row.id) return;
+    if (payload.eventType === 'DELETE') {
+        state.scores = state.scores.filter(s => s.id !== row.id);
+    } else {
+        state.scores = state.scores.filter(s => s.id !== row.id);
+        state.scores.push({
+            id: row.id,
+            student_id: row.student_id,
+            project: row.project,
+            value: parseFloat(row.value),
+            unit: row.unit,
+            level: row.level,
+            score: row.score
+        });
+    }
+    LS.set('tb_scores', state.scores);
+    // 正在输入时不重绘，避免打断录入
+    const ae = document.activeElement;
+    if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return;
+    const v = window._liveView || 'home';
+    const entryViews = ['height', 'vital', 'longjump', 'sitflex'];
+    if (!entryViews.includes(v)) { navigate(v); return; }
+    if (v === 'height') recalcBMI(row.student_id);
+    else if (typeof showLevelBadge === 'function') showLevelBadge(row.student_id, row.project, row.value);
+}
+
+// ============================================
+// 连续录入辅助（性别筛选、自动跳转、自动保存）
+// ============================================
+window._genderFilter = window._genderFilter || '全部';
+window._entryTimers = window._entryTimers || {};
+
+function _genderBar() {
+    const g = window._genderFilter || '全部';
+    return `<div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;">
+        <span style="font-size:13px;color:#1e40af;font-weight:600;">👫 性别：</span>
+        ${['全部','男','女'].map(x => `<button class="btn btn-sm ${x===g?'btn-primary':'btn-ghost'}" onclick="window._genderFilter='${x}';window._entryReload&&window._entryReload();">${x}</button>`).join('')}
+    </div>`;
+}
+
+function _jumpToNext(id, prefix) {
+    const list = _getFilteredStudents();
+    const i = list.findIndex(s => s.id === id);
+    const nx = list[i + 1];
+    if (nx) {
+        const el = document.getElementById(prefix + '-' + nx.id);
+        if (el) { el.focus(); el.select && el.select(); }
+    }
+}
+
+function _heightInput(id, el) {
+    const v = el.value.replace(/\D/g, '').slice(0, 3);
+    el.value = v;
+    el.classList.toggle('filled', !!v);
+    if (v.length >= 3) {
+        const w = document.getElementById('w-' + id);
+        if (w) w.focus();
+    }
+}
+
+function _heightCommit(id, val) {
+    const v = String(val).replace(/\D/g, '');
+    if (!v) return;
+    saveScore(id, '身高', parseFloat(v), 'cm');
+    recalcBMI(id);
+    const el = document.getElementById('h-' + id);
+    if (el) el.classList.add('filled');
+}
+
+function _weightValue(v) {
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return NaN;
+    return v.length >= 3 ? n / 10 : n;
+}
+
+function _weightInput(id, el) {
+    const had = !!state.scores.find(sc => sc.student_id === id && sc.project === '体重' && sc.value);
+    const v = el.value.replace(/\D/g, '').slice(0, 3);
+    el.value = v;
+    el.classList.toggle('filled', !!v);
+    clearTimeout(window._entryTimers['w' + id]);
+    if (!v) return;
+    const go = () => {
+        _weightCommit(id, v);
+        if (!had) _jumpToNext(id, 'h');
+    };
+    if (v.length >= 3) go();
+    else window._entryTimers['w' + id] = setTimeout(go, 800);
+}
+
+function _weightCommit(id, val) {
+    const v = String(val).replace(/\D/g, '');
+    if (!v) return;
+    const w = _weightValue(v);
+    if (isNaN(w)) return;
+    saveScore(id, '体重', w, 'kg');
+    recalcBMI(id);
+    const el = document.getElementById('w-' + id);
+    if (el) el.classList.add('filled');
+}
+
+function _singleInput(id, project, navId, params, el) {
+    const allowNeg = project === '坐位体前屈';
+    let v = el.value;
+    if (allowNeg) v = v.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '').slice(0, 5);
+    else v = v.replace(/\D/g, '').slice(0, 5);
+    el.value = v;
+    el.classList.toggle('filled', !!v);
+    const had = !!state.scores.find(sc => sc.student_id === id && sc.project === project && sc.value);
+    clearTimeout(window._entryTimers['s' + id + project]);
+    if (!v || v === '-') return;
+    const digits = v.replace('-', '').length;
+    const go = (jump) => {
+        _singleCommit(id, project, params.unit, v);
+        if (jump && !had) _jumpToNext(id, 's');
+    };
+    if (digits >= params.autoJumpAt) go(true);
+    else window._entryTimers['s' + id + project] = setTimeout(() => go(false), 800);
+}
+
+function _singleCommit(id, project, unit, val) {
+    const v = String(val);
+    let n;
+    if (project === '坐位体前屈') {
+        const neg = v.startsWith('-');
+        const body = neg ? v.slice(1) : v;
+        n = parseInt(body, 10);
+        if (isNaN(n)) return;
+        n = body.length >= 3 ? n / 10 : n;
+        if (neg) n = -n;
+    } else {
+        n = parseFloat(v);
+    }
+    if (isNaN(n)) return;
+    saveScore(id, project, n, unit);
+    if (typeof showLevelBadge === 'function') showLevelBadge(id, project, n);
+    const el = document.getElementById('s-' + id);
+    if (el) el.classList.add('filled');
+}
+
+// ============================================
 // 单项目通用录入（肺活量/跳远/坐位体前屈）
 // ============================================
 function renderSingleEntry(project, navId, unit) {
+    window._entryReload = () => _renderSingle(project, unit, navId);
     const iconMap = { '肺活量': '💨', '立定跳远': '🦘', '坐位体前屈': '📐', '50米×8往返跑': '🔁' };
     const icon = iconMap[project] || '📝';
     document.getElementById('app').innerHTML = renderNav(navId) + `
     <div class="container">
         ${_classFilterBar()}
+        ${_genderBar()}
         <div class="card">
             <div class="h2">${icon} ${project} 成绩录入</div>
-            <div class="text-muted" style="font-size:12px;margin-top:4px;">单位：${unit} · 每个学生一个输入框，自动计算等级</div>
+            <div class="text-muted" style="font-size:12px;margin-top:4px;">单位：${unit} · 按名单顺序录入，输完自动跳到下一位</div>
         </div>
         <div class="card" id="input-card"></div>
     </div>`;
@@ -1500,11 +1656,11 @@ function _renderSingle(project, unit, navId) {
     const showLevel = !!existing;
     el.innerHTML = Object.entries(byClass).map(([cls, list]) => `<div class="group-header">${cls}</div>${list.map(s => {
         const sc = state.scores.find(sc => sc.student_id === s.id && sc.project === project);
-        const onChg = `saveScore('${s.id}','${project}',this.value,'${unit}');${showLevel?'showLevelBadge(\"'+s.id+'\",\"'+project+'\",this.value);':''}`;
+        const autoJumpAt = project === '肺活量' ? 4 : 3;
         return `<div class="score-input-row">
             <div class="score-name">${s.name} <span style="font-size:12px;color:var(--text-muted);">${s.gender||''} · ${s.grade||''}</span></div>
             ${_absenceCell(s.id, project, navId || '')}
-            <input class="score-input-box" type="number" step="0.1" placeholder="${unit}" value="${sc?.value||''}" onchange="${onChg}">
+            <input id="s-${s.id}" class="score-input-box ${sc&&sc.value?'filled':''}" inputmode="numeric" placeholder="${unit}" value="${sc?.value||''}" oninput="_singleInput('${s.id}','${project}','${navId}',{unit:'${unit}',autoJumpAt:${autoJumpAt}},this)" onchange="_singleCommit('${s.id}','${project}','${unit}',this.value)">
             <span class="score-level" id="sl-${s.id}-${project}"></span>
         </div>`;
     }).join('')}`).join('');
