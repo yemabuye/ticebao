@@ -900,6 +900,18 @@ function renderHome() {
         <div class="card" onclick="navigate('students')" style="cursor:pointer;"><div class="flex-between"><div><div style="font-weight:600;">👥 学生名单</div><div class="text-muted" style="font-size:12px;">共 ${state.students.length} 名学生 · Excel 导入</div></div><span>→</span></div></div>
         <div class="card" onclick="navigate('analysis')" style="cursor:pointer;"><div class="flex-between"><div><div style="font-weight:600;">📊 成绩分析</div><div class="text-muted" style="font-size:12px;">查看评分、统计达标率</div></div><span>→</span></div></div>
         <div class="card" onclick="navigate('export')" style="cursor:pointer;"><div class="flex-between"><div><div style="font-weight:600;">📤 导出上报</div><div class="text-muted" style="font-size:12px;">21列标准 Excel · 直接上传国网体测网</div></div><span>→</span></div></div>
+        <div class="h2" style="margin-top:24px;">📱 手机 App</div>
+        <a href="apk/ticebao-latest.apk" download style="text-decoration:none;color:inherit;">
+            <div class="card" style="cursor:pointer;border-left:4px solid #2563eb;">
+                <div class="flex-between">
+                    <div>
+                        <div style="font-weight:600;">📲 安卓 App 安装包</div>
+                        <div class="text-muted" style="font-size:12px;">v1.0.7 · 现场录入更快，数据实时同步</div>
+                    </div>
+                    <span style="background:#2563eb;color:white;padding:6px 14px;border-radius:6px;font-size:13px;white-space:nowrap;">下载</span>
+                </div>
+            </div>
+        </a>
         <div class="card text-muted" style="font-size:12px;margin-top:24px;">💾 数据存储在本浏览器本地，换设备请用"导出"和"导入"功能迁移</div>
     </div>`;
 }
