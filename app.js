@@ -207,14 +207,15 @@ function navigate(view) {
     window.scrollTo(0, 0);
     window._liveView = view;
     
-    // 未登录 → 强制去登录页
-    if (!state.authed && view !== 'auth') {
+    // 未登录 → 强制去登录页（下载页除外）
+    if (!state.authed && view !== 'auth' && view !== 'download') {
         renderAuth();
         return;
     }
     
     switch(view) {
         case 'auth': renderAuth(); break;
+        case 'download': renderDownload(); break;
         case 'home': renderHome(); break;
         case 'timer': renderTimer(); break;
         case 'rope': renderRope(); break;
@@ -489,7 +490,7 @@ function renderAppBanner() {
             <div style="font-weight:600;font-size:14px;">📲 安卓 App 更顺手</div>
             <div style="font-size:12px;opacity:0.85;margin-top:2px;">现场计时录入，数据实时同步 v1.0.7</div>
         </div>
-        <a href="apk/ticebao-latest.apk" download style="background:white;color:#1e3a8a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;">下载</a>
+        <div onclick="navigate('download')" style="background:white;color:#1e3a8a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;">去下载</div>
     </div>`;
 }
 
@@ -501,17 +502,71 @@ function renderAppDownload() {
         <div style="font-size:12px;color:#64748b;margin:6px 0 12px;line-height:1.6;">
             现场计时、名单录入更快，数据与网页实时同步。iPhone 请直接使用网页版。
         </div>
-        <a href="apk/ticebao-latest.apk" download class="btn btn-primary btn-block" style="text-decoration:none;display:block;text-align:center;">⬇️ 下载最新版 App</a>
-        <div style="font-size:12px;color:#64748b;margin-top:12px;line-height:1.9;background:#f8fafc;border-radius:8px;padding:10px;">
-            <b style="color:#1e3a8a;">安装步骤</b><br>
-            1. 点上面的按钮，下载安装包<br>
-            2. 下载完成后点「安装」<br>
-            3. 提示「禁止安装未知应用」时，点「设置」，打开允许后返回<br>
-            4. 提示「应用未经过安全检测」时，点「继续安装」<br>
-            5. 安装完打开，用网页同一个账号登录<br>
-            <span style="color:#dc2626;font-weight:600;">当前版本 v1.0.7，每次发版此文件自动覆盖为最新</span>
+        <div onclick="navigate('download')" class="btn btn-primary btn-block" style="text-align:center;cursor:pointer;">查看下载与安装方法 →</div>
+        <div style="font-size:12px;color:#64748b;margin-top:10px;line-height:1.8;">
+            包含扫码下载、安卓安装步骤、电脑传到手机的方法、iPhone 使用说明
         </div>
     </div>`;
+}
+
+// ============================================
+// 下载引导页
+// ============================================
+function renderDownload() {
+    document.getElementById('app').innerHTML = `
+    <div class="container">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+            <span onclick="navigate(state.authed ? 'home' : 'auth')" style="cursor:pointer;font-size:22px;padding:4px 8px;">←</span>
+            <div style="font-size:18px;font-weight:700;">📲 下载体测宝 App</div>
+        </div>
+
+        <div class="card" style="text-align:center;">
+            <div style="font-size:15px;font-weight:600;margin-bottom:12px;">用手机扫码打开本页</div>
+            <div id="dl-qrcode" style="display:flex;justify-content:center;"></div>
+            <div style="font-size:12px;color:#64748b;margin-top:12px;line-height:1.8;">
+                微信扫码后，点右上角「···」<br>选「在浏览器打开」，否则无法下载安装包
+            </div>
+        </div>
+
+        <div class="h2" style="margin-top:20px;">📱 安卓手机安装</div>
+        <div class="card" style="font-size:13px;line-height:2;color:#334155;">
+            <b>1.</b> 点下面的按钮下载安装包，约 70 MB<br>
+            <b>2.</b> 下载完成后，从屏幕顶部下拉通知栏，点那条下载完成的提示<br>
+            <b>3.</b> 提示「禁止安装未知应用」时，点「设置」打开允许，返回后再点安装<br>
+            <b>4.</b> 提示「未经安全检测」时，点「继续安装」<br>
+            <b>5.</b> 装好打开，用网页同一个账号登录，数据自动同步
+        </div>
+        <a href="apk/ticebao-latest.apk" download style="text-decoration:none;">
+            <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.7</div>
+        </a>
+
+        <div class="h2" style="margin-top:20px;">💻 电脑下载，再传到手机</div>
+        <div class="card" style="font-size:13px;line-height:2;color:#334155;">
+            如果手机上下载不了，可以在电脑上点上面的按钮下载，再传到手机：<br>
+            <b>方式一（推荐）</b>：电脑微信打开「文件传输助手」，把 ticebao-latest.apk 拖进去发送，手机微信收到后点文件直接安装<br>
+            <b>方式二</b>：用数据线连电脑，把文件复制到手机「Download」文件夹，再用手机文件管理点开安装
+        </div>
+
+        <div class="h2" style="margin-top:20px;">🍎 苹果手机怎么用</div>
+        <div class="card" style="font-size:13px;line-height:2;color:#334155;">
+            这个 App 只支持安卓。iPhone 直接用网页版，功能一样，数据互通：<br>
+            <b>1.</b> 用 Safari 打开 ${location.origin}<br>
+            <b>2.</b> 点底部中间的「分享」按钮（方框带向上箭头）<br>
+            <b>3.</b> 往下滑，选「添加到主屏幕」，点「添加」<br>
+            <b>4.</b> 桌面出现体测宝图标，点开全屏使用，和 App 没区别
+        </div>
+
+        <div class="card text-muted" style="font-size:12px;margin-top:20px;">
+            安装遇到问题，把手机型号和错误截图发给管理员。
+        </div>
+    </div>`;
+    setTimeout(function () {
+        var el = document.getElementById('dl-qrcode');
+        if (el && typeof QRCode !== 'undefined') {
+            el.innerHTML = '';
+            new QRCode(el, { text: location.origin + '/', width: 170, height: 170, colorDark: '#1e3a8a', colorLight: '#ffffff' });
+        }
+    }, 60);
 }
 
 // === 验证码流程 ===
