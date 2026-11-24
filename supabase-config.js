@@ -345,10 +345,24 @@ async function adminDisableCode(pwd, code) {
     }
 }
 
+// ====== 实时订阅：成绩变更推送 ======
+let realtimeCh = null;
+function startRealtime(onScore) {
+    if (!supabase || realtimeCh) return;
+    try {
+        realtimeCh = supabase.channel('ticebao-scores-live')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'scores' }, p => {
+                try { if (onScore) onScore(p); } catch (e) { console.warn('[Supabase] 实时处理失败:', e.message); }
+            })
+            .subscribe();
+    } catch (e) { console.warn('[Supabase] 实时订阅失败:', e.message); }
+}
+
 // ====== 导出全局 ======
 window.SB = {
     init: initSupabase,
     ready: () => supabaseReady,
+    startRealtime: startRealtime,
     getTeacherUuid: () => teacherUuid,
     verifyCode: verifyActivationCode,
     syncStudents: cloudSyncStudents,
