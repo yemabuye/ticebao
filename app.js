@@ -487,7 +487,7 @@ function renderAppBanner() {
     <div class="card" style="background:linear-gradient(135deg,#1e3a8a,#2563eb);color:white;display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <div>
             <div style="font-weight:600;font-size:14px;">📲 安卓 App 更顺手</div>
-            <div style="font-size:12px;opacity:0.85;margin-top:2px;">现场计时录入，数据双向同步 v1.0.8</div>
+            <div style="font-size:12px;opacity:0.85;margin-top:2px;">现场计时录入，数据双向同步 v1.0.9</div>
         </div>
         <div onclick="navigate('download')" style="background:white;color:#1e3a8a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;">去下载</div>
     </div>`;
@@ -528,7 +528,7 @@ function renderDownload() {
 
         <div class="h2" style="margin-top:20px;">📱 安卓手机安装</div>
         <div class="card" style="font-size:13px;line-height:2;color:#334155;">
-            <b>1.</b> 点下面的按钮下载安装包，约 70 MB<br>
+            <b>1.</b> 点下面的按钮下载安装包，约 24 MB<br>
             <b>2.</b> 手机会弹出下载确认页。荣耀、华为会跳到应用市场，显示「网页安装包 · 未经荣耀安全检测」，这是正常的<br>
             <b>3.</b> 点「下载」，等进度走完<br>
             <b>4.</b> 按钮变成「安装」后，点「安装」<br>
@@ -536,8 +536,11 @@ function renderDownload() {
             <b>6.</b> 装好打开，用网页同一个账号登录，数据自动同步
         </div>
         <a href="apk/ticebao-latest.apk" download style="text-decoration:none;">
-            <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.8</div>
+            <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.9</div>
         </a>
+        <div class="card" style="font-size:12px;line-height:1.8;color:#475569;background:#f8fafc;margin-top:10px;">
+            💡 如果下载速度慢，可以多等一会儿，或者换用手机流量再试；App 内的「立即更新」已改成多线程下载，会明显更快。
+        </div>
         <div class="card" style="font-size:12px;line-height:1.8;color:#b45309;background:#fffbeb;border:1px solid #fde68a;margin-top:10px;">
             ⚠️ 不要在微信里直接点下载，微信会拦截安装包。请按上面的方法用浏览器打开本页。
         </div>
