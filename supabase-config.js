@@ -143,40 +143,33 @@ async function cloudSyncStudents(localStudents) {
             .in('teacher_uuid', uuids);
         if (fetchErr) throw fetchErr;
 
-        // 本地为主，补充云端新增
-        const localIds = new Set(localStudents.map(s => s.id));
-        let merged = [...localStudents];
-        if (cloudStudents) {
-            cloudStudents.forEach(cs => {
-                if (!localIds.has(cs.id)) {
-                    merged.push({
-                        id: cs.id,
-                        name: cs.name,
-                        gender: cs.gender,
-                        grade: cs.grade,
-                        class_name: cs.class_name,
-                        student_id: cs.student_id,
-                        ethnicity: cs.ethnicity,
-                        birthday: cs.birthday,
-                    });
-                }
-            });
-        }
+        // 云端优先：学生信息以云端为准，本地独有的补进去（实现网站改动能推到 App）
+        const cloudList = (cloudStudents || []).map(cs => ({
+            id: cs.id,
+            name: cs.name,
+            gender: cs.gender,
+            grade: cs.grade,
+            class_name: cs.class_name,
+            student_id: cs.student_id,
+            ethnicity: cs.ethnicity || '',
+            birthday: cs.birthday || '',
+        }));
+        const cloudIds = new Set(cloudList.map(c => c.id));
+        const localOnly = localStudents.filter(s => !cloudIds.has(s.id));
+        const merged = cloudList.concat(localOnly);
 
-        // 推送本地新增到云端（严格匹配字段）
-        const toInsert = localStudents
-            .filter(s => !cloudStudents || !cloudStudents.find(c => c.id === s.id))
-            .map(s => ({
-                id: s.id,                       // uuid
-                teacher_uuid: teacherUuid,       // TEXT
-                name: s.name,
-                gender: s.gender,
-                grade: s.grade,
-                class_name: s.class_name,
-                student_id: s.student_id,
-                ethnicity: s.ethnicity || null,
-                birthday: s.birthday || null,
-            }));
+        // 推送本地独有的学生到云端（严格匹配字段）
+        const toInsert = localOnly.map(s => ({
+            id: s.id,                       // uuid
+            teacher_uuid: teacherUuid,       // TEXT
+            name: s.name,
+            gender: s.gender,
+            grade: s.grade,
+            class_name: s.class_name,
+            student_id: s.student_id,
+            ethnicity: s.ethnicity || null,
+            birthday: s.birthday || null,
+        }));
 
         if (toInsert.length > 0) {
             const { error } = await supabase.from('students').upsert(toInsert);
@@ -207,37 +200,48 @@ async function cloudSyncScores(localScores) {
             .in('teacher_uuid', uuids);
         if (fetchErr) throw fetchErr;
 
-        // 本地为主，补充云端新增
-        const localIds = new Set(localScores.map(s => s.id));
-        let merged = [...localScores];
-        if (cloudScores) {
-            cloudScores.forEach(cs => {
-                if (!localIds.has(cs.id)) {
-                    merged.push({
-                        id: cs.id,
-                        student_id: cs.student_id,
-                        project: cs.project,
-                        value: parseFloat(cs.value),
-                        unit: cs.unit,
-                        level: cs.level,
-                        score: cs.score,
-                    });
-                }
-            });
-        }
+        // 成绩按「学生 + 项目」唯一，录入时间新的胜出（实现双向互通）
+        const keyOf = s => s.student_id + '|' + s.project;
+        const toTime = s => { const t = new Date(s.recorded_at || 0).getTime(); return isNaN(t) ? 0 : t; };
+        const cloudMap = new Map();
+        (cloudScores || []).forEach(cs => cloudMap.set(keyOf(cs), cs));
 
-        // 推送本地新增到云端（严格匹配字段）
-        const toInsert = localScores
-            .filter(s => !cloudScores || !cloudScores.find(c => c.id === s.id))
+        const mergedMap = new Map();
+        (cloudScores || []).forEach(cs => {
+            mergedMap.set(keyOf(cs), {
+                id: cs.id,
+                student_id: cs.student_id,
+                project: cs.project,
+                value: parseFloat(cs.value),
+                unit: cs.unit,
+                level: cs.level,
+                score: cs.score,
+                recorded_at: cs.recorded_at,
+            });
+        });
+        localScores.forEach(ls => {
+            const k = keyOf(ls);
+            const cur = mergedMap.get(k);
+            if (!cur || toTime(ls) > toTime(cur)) mergedMap.set(k, ls);
+        });
+        const merged = [...mergedMap.values()];
+
+        // 推送本地较新的成绩到云端（含新增）
+        const toInsert = merged
+            .filter(m => {
+                const c = cloudMap.get(keyOf(m));
+                return !c || toTime(m) > toTime(c);
+            })
             .map(s => ({
                 id: s.id,                       // uuid
                 teacher_uuid: teacherUuid,       // TEXT
                 student_id: s.student_id,        // uuid（关联 students.id）
                 project: s.project,
-                value: s.value,                  // numeric
+                value: Number.isFinite(Number(s.value)) ? Number(s.value) : null,
                 unit: s.unit || null,
                 level: s.level || null,
                 score: s.score || null,
+                recorded_at: s.recorded_at || null,
             }));
 
         if (toInsert.length > 0) {
