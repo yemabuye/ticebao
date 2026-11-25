@@ -487,7 +487,7 @@ function renderAppBanner() {
     <div class="card" style="background:linear-gradient(135deg,#1e3a8a,#2563eb);color:white;display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <div>
             <div style="font-weight:600;font-size:14px;">📲 安卓 App 更顺手</div>
-            <div style="font-size:12px;opacity:0.85;margin-top:2px;">现场计时录入，数据双向同步 v1.0.9</div>
+            <div style="font-size:12px;opacity:0.85;margin-top:2px;">现场计时录入，数据双向同步 v1.0.10</div>
         </div>
         <div onclick="navigate('download')" style="background:white;color:#1e3a8a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;">去下载</div>
     </div>`;
@@ -536,7 +536,7 @@ function renderDownload() {
             <b>6.</b> 装好打开，用网页同一个账号登录，数据自动同步
         </div>
         <a href="apk/ticebao-latest.apk" download style="text-decoration:none;">
-            <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.9</div>
+            <div class="btn btn-primary btn-block" style="text-align:center;margin-top:12px;">⬇️ 下载安卓安装包 v1.0.10</div>
         </a>
         <div class="card" style="font-size:12px;line-height:1.8;color:#475569;background:#f8fafc;margin-top:10px;">
             💡 如果下载速度慢，可以多等一会儿，或者换用手机流量再试；App 内的「立即更新」已改成多线程下载，会明显更快。
