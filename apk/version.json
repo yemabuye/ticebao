@@ -1,1 +1,1 @@
-{"versionCode":9,"versionName":"1.0.8","url":"https://myshichuang.xyz/apk/ticebao-latest.apk","notes":"1.0.8：网站与 App 真正双向同步，网站改学生信息 App 能看到，App 录成绩网站能看到；成绩按学生+项目取最新"}
+{"versionCode":10,"versionName":"1.0.9","url":"https://myshichuang.xyz/apk/ticebao-latest.apk","notes":"1.0.9：升级弹窗点「以后再说」后，顶部会保留升级入口；App 内更新改为 4 线程分段下载，速度大幅提升；安装包精简到约 24 MB。数据双向同步继续有效。"}
