@@ -1,1 +1,1 @@
-{"versionCode":10,"versionName":"1.0.9","url":"https://myshichuang.xyz/apk/ticebao-latest.apk","notes":"1.0.9：升级弹窗点「以后再说」后，顶部会保留升级入口；App 内更新改为 4 线程分段下载，速度大幅提升；安装包精简到约 24 MB。数据双向同步继续有效。"}
+{"versionCode":11,"versionName":"1.0.10","url":"https://myshichuang.xyz/apk/ticebao-latest.apk","notes":"1.0.10：首页新增「测试范围」，先选班级再选男女，各录入页自动只显示所选学生，首页统计也按范围计算；带多个班时不用再翻名单。"}
